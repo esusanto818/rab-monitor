@@ -10,11 +10,16 @@
 ?>
 <html>
     <head>
+        <link rel="stylesheet" type="text/cs" href="/proyek/ext-3.4.1/resources/css/ext-all.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/mainCSS.css" />
         <style>
             #editorForm {top: 30%; width: 80%; }
+            body{background:none;}
         </style>
-        <title id="page-title">Proyek</title>
+        <title id="page-title">Proyek</title> 
         <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/frm.css" />
         <script type="text/javascript">
             window.formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 0)); ?>;
         </script>

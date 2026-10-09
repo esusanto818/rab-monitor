@@ -1,7 +1,10 @@
 /*
-  Document      : m.master_proyek.js
+  Document      : m_proyek.js
   Description   : ExtJS Controller untuk pengelolaan Master Proyek
   Backend       : /proyek/php-crud/m.proyekCRD.php
+  Perubahan     : - [BARU] field Budget, Nilai Kontrak, Progress di form
+                  - [BARU] handler failure & exception store (pesan error eksplisit)
+                  - [FIX PIC] daftar PIC kini dari m_employee (diatur di backend)
 */
 
 Ext.onReady(function () {
@@ -10,34 +13,48 @@ Ext.onReady(function () {
         document.getElementById("mainHeaderText").innerHTML = "Master Data <em>Proyek & Kontrak</em>";
     }
 
+    var CRD = '../php-crud/m.proyekCRD.php';
     var task = '';
     var dataRecord = null;
 
+    // [BARU] listener exception untuk semua store
+    function storeException(proxy, type, action, options, response) {
+        var msg = 'Gagal memuat data dari server.';
+        try {
+            var r = Ext.util.JSON.decode(response.responseText);
+            if (r && r.message) msg = r.message;
+        } catch (e) { msg += ' (respons bukan JSON, cek error_log PHP)'; }
+        Ext.Msg.alert('Gagal', msg);
+    }
+
     // 1. Stores
     var clientDs = new Ext.data.Store({
-        url: '../php-crud/m.proyekCRD.php',
+        url: CRD,
         baseParams: { task: 'read_clients' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, [
             { name: 'id' }, { name: 'name' }
-        ])
+        ]),
+        listeners: { exception: storeException }
     });
     clientDs.load();
 
     var picDs = new Ext.data.Store({
-        url: '../php-crud/m.proyekCRD.php',
+        url: CRD,
         baseParams: { task: 'read_pics' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, [
             { name: 'id' }, { name: 'name' }
-        ])
+        ]),
+        listeners: { exception: storeException }
     });
     picDs.load();
 
     var locationDs = new Ext.data.Store({
-        url: '../php-crud/m.proyekCRD.php',
+        url: CRD,
         baseParams: { task: 'read_locations' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, [
             { name: 'id' }, { name: 'name' }
-        ])
+        ]),
+        listeners: { exception: storeException }
     });
     locationDs.load();
 
@@ -56,15 +73,17 @@ Ext.onReady(function () {
         { name: 'pic_id' }, { name: 'pic_name' }, { name: 'location_id' }, { name: 'location_name' }, { name: 'location' },
         { name: 'start_date', type: 'date', dateFormat: 'Y-m-d' },
         { name: 'end_date', type: 'date', dateFormat: 'Y-m-d' },
-        { name: 'budget', type: 'float' }, { name: 'spent', type: 'float' },
+        { name: 'budget', type: 'float' }, { name: 'contract_value', type: 'float' },   // [BARU] contract_value
+        { name: 'spent', type: 'float' },
         { name: 'progress', type: 'int' }, { name: 'status' }, { name: 'notes' }
     ];
 
     mainDs = new Ext.data.Store({
-        url: '../php-crud/m.proyekCRD.php',
+        url: CRD,
         idProperty: 'id',
         baseParams: { task: 'read' },
-        reader: new Ext.data.JsonReader({ root: 'data', totalProperty: 'totalCount' }, mainFields)
+        reader: new Ext.data.JsonReader({ root: 'data', totalProperty: 'totalCount' }, mainFields),
+        listeners: { exception: storeException }
     });
     mainDs.load();
 
@@ -82,6 +101,10 @@ Ext.onReady(function () {
             { header: 'Tgl Selesai', dataIndex: 'end_date', width: 90, renderer: Ext.util.Format.dateRenderer('d/m/Y') },
             {
                 header: 'Plafon Budget', dataIndex: 'budget', width: 130, align: 'right',
+                renderer: function (v) { return 'Rp ' + Ext.util.Format.number(v || 0, '0,000.00'); }
+            },
+            {   // [BARU] kolom nilai kontrak
+                header: 'Nilai Kontrak', dataIndex: 'contract_value', width: 130, align: 'right',
                 renderer: function (v) { return 'Rp ' + Ext.util.Format.number(v || 0, '0,000.00'); }
             },
             { header: 'Progress (%)', dataIndex: 'progress', width: 90, align: 'center', renderer: function(v){ return (v || 0) + '%'; } },
@@ -110,11 +133,15 @@ Ext.onReady(function () {
     var fldStartDate = new Ext.form.DateField({ fieldLabel: 'Tgl Mulai', id: 'start_date', name: 'start_date', format: 'Y-m-d', width: 140 });
     var fldEndDate = new Ext.form.DateField({ fieldLabel: 'Tgl Selesai', id: 'end_date', name: 'end_date', format: 'Y-m-d', width: 140 });
     var fldStatus = new myComboField({ fieldLabel: 'Status', id: 'status', name: 'status', hiddenName: 'status', store: statusDs, displayField: 'name', valueField: 'id', value: 'Berjalan' });
-    var fldNotes =  new Ext.form.TextArea({ 
-        fieldLabel: 'Catatan', 
-        id: 'notes', 
+    // [BARU] field angka yang sebelumnya tidak ada di form
+    var fldBudget = new myNumberField({ fieldLabel: 'Plafon Budget', id: 'budget', name: 'budget', decimalPrecision: 2, value: 0, width: 140 });
+    var fldContract = new myNumberField({ fieldLabel: 'Nilai Kontrak', id: 'contract_value', name: 'contract_value', decimalPrecision: 2, value: 0, width: 140 });
+    var fldProgress = new myNumberField({ fieldLabel: 'Progress (%)', id: 'progress', name: 'progress', decimalPrecision: 0, minValue: 0, maxValue: 100, value: 0, width: 80 });
+    var fldNotes = new Ext.form.TextArea({
+        fieldLabel: 'Catatan',
+        id: 'notes',
         name: 'notes',
-        anchor: '100%', // atau width: 450 agar melebar penuh
+        anchor: '100%',
         height: 50 });
 
     var frmEditor = new stdForm({
@@ -123,16 +150,16 @@ Ext.onReady(function () {
         labelWidth: 100,
         defaults: { xtype: 'container', layout: 'form', columnWidth: 0.5, baseCls: 'x-plain' },
         items: [
-            { items: [fldId, fldName, fldClient, fldPic, fldLocation] },
+            { items: [fldId, fldName, fldClient, fldPic, fldLocation, fldNotes] },
             { items: [
-                fldStartDate, 
-                fldEndDate, 
-                fldStatus,           
-                fldNotes,        
-                { columnWidth: 1, items: FieldSpace },
+                fldStartDate,
+                fldEndDate,
+                fldStatus,
+                fldBudget,      // [BARU]
+                fldContract,    // [BARU]
+                fldProgress,    // [BARU]
                 { columnWidth: 1, items: FieldSpace }
             ] }
-
         ]
     });
 
@@ -145,11 +172,13 @@ Ext.onReady(function () {
     };
 
     document.getElementById('editData').onclick = function () {
-        if (!dataRecord) return;
+        if (!dataRecord) { Ext.Msg.alert('Peringatan', 'Pilih proyek terlebih dahulu.'); return; }
         task = 'update';
         frmEditor.getForm().reset();
+        document.getElementById('editorWdw').style.display = 'block';
+        document.getElementById('editorFormHeaderText').innerHTML = '&nbsp;&nbsp;Edit Master Proyek';
         frmEditor.getForm().load({
-            url: '../php-crud/m.proyekCRD.php',
+            url: CRD,
             params: { id: dataRecord.id, task: 'read_one' },
             success: function (form, action) {
                 var res = Ext.util.JSON.decode(action.response.responseText);
@@ -158,19 +187,20 @@ Ext.onReady(function () {
                 fldPic.setValue(d.pic_id);
                 fldLocation.setValue(d.location_id);
                 fldStatus.setValue(d.status);
+                fldBudget.setValue(d.budget);               // [BARU]
+                fldContract.setValue(d.contract_value);     // [BARU]
+                fldProgress.setValue(d.progress);           // [BARU]
             },
             failure: function () {
                 Ext.Msg.alert('Gagal', 'Gagal memuat data proyek.');
             }
         });
-        document.getElementById('editorWdw').style.display = 'block';
-        document.getElementById('editorFormHeaderText').innerHTML = '&nbsp;&nbsp;Edit Master Proyek';
     };
 
     document.getElementById('saveEdit').onclick = function () {
         if (!frmEditor.getForm().isValid()) return;
         frmEditor.getForm().submit({
-            url: '../php-crud/m.proyekCRD.php',
+            url: CRD,
             method: 'POST',
             params: { task: task },
             success: function (form, action) {
@@ -179,28 +209,35 @@ Ext.onReady(function () {
                 document.getElementById('popWdw').style.display = 'block';
                 mainDs.load({ params: { task: 'read' } });
                 document.getElementById('editorWdw').style.display = 'none';
+            },
+            failure: function (form, action) {   // [BARU] tampilkan pesan error dari backend
+                var msg = (action.result && action.result.message) ? action.result.message : 'Gagal menyimpan data (cek error_log PHP).';
+                Ext.Msg.alert('Gagal', msg);
             }
         });
     };
 
     document.getElementById('deleteData').onclick = function () {
-        if (!dataRecord) return;
+        if (!dataRecord) { Ext.Msg.alert('Peringatan', 'Pilih proyek terlebih dahulu.'); return; }
         Ext.Msg.confirm('Konfirmasi', 'Hapus proyek ini?', function (btn) {
             if (btn === 'yes') {
                 Ext.Ajax.request({
-                    url: '../php-crud/m.proyekCRD.php',
+                    url: CRD,
                     params: { task: 'delete', id: dataRecord.id },
                     success: function (response) {
-                        var res = Ext.util.JSON.decode(response.responseText);
+                        var res;
+                        try { res = Ext.util.JSON.decode(response.responseText); }
+                        catch (e) { Ext.Msg.alert('Gagal', 'Respons server tidak valid (cek error_log PHP).'); return; }
                         document.getElementById('popWdwTxt').innerHTML = res.message;
                         document.getElementById('popWdw').style.display = 'block';
+                        if (res.success) { dataRecord = null; }
                         mainDs.load({ params: { task: 'read' } });
-                    }
+                    },
+                    failure: function () { Ext.Msg.alert('Gagal', 'Gagal menghubungi server.'); }
                 });
             }
         });
     };
-
 
     document.getElementById('popOK').onclick = function () {
         document.getElementById('popWdw').style.display = 'none';

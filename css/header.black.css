@@ -1,3 +1,9 @@
+html, body {
+    background-color: #020c1b !important;   /* Dark Blue / Navy Gelap */
+    color: #89b3d9 !important;
+    font-family: 'Inter', 'Segoe UI', sans-serif !important;
+}
+
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1) !important;}
 #mainHeader { background: rgba(66, 0, 255, .3); }
 #mainHeaderText { color: #fff; }

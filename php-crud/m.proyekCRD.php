@@ -4,35 +4,38 @@
  * ============================================================
  * Backend Controller untuk Master Proyek (public.projects).
  *
- * PERBAIKAN dari versi sebelumnya:
- * - [FIX FATAL] $db tidak pernah diinisialisasi ($db = new crud() hilang).
- * - [FIX KONTRAK] Versi lama pakai $_REQUEST['action'] dengan nama task
- *   (read/get_clients/get_locations/get_pics/save/delete) dan nama field
- *   (project_name, location_detail) yang TIDAK COCOK dengan m_proyek.js
- *   (yang mengirim task=... dan field name/pic_id/dst) -- selalu jatuh ke
- *   "Aksi tidak valid!". Disatukan ke $_REQUEST['task'], konsisten dengan
- *   seluruh modul lain (whrcvCRD.php, rabCRD.php, dst), dan field mengikuti
- *   PERSIS apa yang dikirim m_proyek.js.
- * - PIC diambil dari tabel `pics` (sesuai picDs di m_proyek.js), BUKAN
- *   m_employee seperti versi lama -- kalau ternyata PIC proyek memang
- *   harus dari data karyawan (m_employee), kabari saya, gampang diubah.
- * - Task 'read_one' ditambahkan (dipanggil m_proyek.js saat Edit, sebelumnya
- *   tidak ada sama sekali di versi lama -- Edit pasti gagal juga).
- * - Field contract_value ditambahkan ke create/update & read (kolom sudah
- *   ada di projects, tapi sebelumnya tidak ada satu pun layar yang bisa
- *   mengisinya -- padahal project_invoiceCRD.php/Termin Proyek bergantung
- *   ke kolom ini).
+ * Catatan perubahan:
+ * - [FIX PARSE ERROR] Karakter 'P' nyasar setelah '}' terakhir dihapus
+ *   (penyebab "unexpected end of file" di log Apache).
+ * - [FIX PIC] projects.pic_id mengacu ke m_employee.id (terbukti dari data),
+ *   bukan tabel `pics`. 'read' dan 'read_pics' sekarang memakai m_employee.
+ * - [FIX] UPDATE tidak lagi menimpa budget/contract_value/progress
+ *   dengan 0 bila field tersebut tidak dikirim klien.
+ * - [FIX] Respons JSON dibersihkan dari output liar (ob_start/ob_clean),
+ *   display_errors dimatikan agar JSON tidak rusak.
  * ============================================================
  */
+
+ini_set('display_errors', '0');   // [FIX] jangan bocorkan error ke body JSON
+ob_start();                        // [FIX] tampung output liar
 
 require_once __DIR__ . '/../php-func/function.all.php';
 require_once __DIR__ . '/../php-class/crudClass.php';
 
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 header('Content-Type: application/json');
 
 $task = $_REQUEST['task'] ?? '';
-$db   = new crud(); // [FIX] sebelumnya tidak ada -- inilah penyebab "Aksi tidak valid" / fatal
+$db   = new crud();
+
+/** [FIX] Kirim JSON bersih lalu berhenti. */
+function mpJson(array $payload) {
+    if (ob_get_length()) { ob_clean(); }
+    echo json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
 
 function PrepOrFailMP($stmt, $context = '') {
     if ($stmt === false) {
@@ -66,39 +69,46 @@ try {
     switch ($task) {
 
         case 'read':
+            // [FIX PIC] join ke m_employee (bukan pics)
             $sql = "SELECT p.id, p.name, p.client_id, c.name AS client_name,
-                           p.pic_id, pic.name AS pic_name,
+                           p.pic_id, e.employee_name AS pic_name,
                            p.location_id, loc.name AS location_name, p.location,
                            p.start_date, p.end_date, p.budget, p.contract_value, p.spent, p.progress,
                            p.status, p.notes
                     FROM projects p
                     LEFT JOIN clients c ON c.id = p.client_id
-                    LEFT JOIN pics pic ON pic.id = p.pic_id
+                    LEFT JOIN m_employee e ON e.id = p.pic_id
                     LEFT JOIN m_location loc ON loc.id = p.location_id
                     ORDER BY p.id DESC";
             $data = mpFetchAll($db, $sql, [], 'read');
-            echo json_encode(['success' => true, 'totalCount' => count($data), 'data' => $data]);
+            mpJson(['success' => true, 'totalCount' => count($data), 'data' => $data]);
             break;
 
         case 'read_one':
-            $id = (int)($_REQUEST['id'] ?? 0);
+            $id  = (int)($_REQUEST['id'] ?? 0);
             $row = mpFetchOne($db, "SELECT * FROM projects WHERE id = :id", ['id' => $id], 'read_one');
             if (!$row) throw new Exception('Data proyek tidak ditemukan.');
-            echo json_encode(['success' => true, 'data' => $row]);
+            mpJson(['success' => true, 'data' => $row]);
             break;
 
         case 'read_clients':
-            echo json_encode(['success' => true, 'data' => mpFetchAll($db,
+            mpJson(['success' => true, 'data' => mpFetchAll($db,
                 "SELECT id, name FROM clients ORDER BY name", [], 'read_clients')]);
             break;
 
         case 'read_pics':
-            echo json_encode(['success' => true, 'data' => mpFetchAll($db,
-                "SELECT id, name FROM pics ORDER BY name", [], 'read_pics')]);
+            // [FIX PIC] daftar PIC = karyawan aktif; karyawan nonaktif tetap ikut
+            // bila sudah dipakai sebagai PIC proyek (agar tampil benar saat Edit).
+            mpJson(['success' => true, 'data' => mpFetchAll($db,
+                "SELECT id, employee_name AS name
+                   FROM m_employee
+                  WHERE employee_name IS NOT NULL
+                    AND (active IS NOT FALSE OR id IN (SELECT pic_id FROM projects WHERE pic_id IS NOT NULL))
+                  ORDER BY employee_name", [], 'read_pics')]);
             break;
 
         case 'read_locations':
-            echo json_encode(['success' => true, 'data' => mpFetchAll($db,
+            mpJson(['success' => true, 'data' => mpFetchAll($db,
                 "SELECT id, name FROM m_location ORDER BY name", [], 'read_locations')]);
             break;
 
@@ -106,12 +116,10 @@ try {
         case 'create':
         case 'update':
             if ($task === 'create' && $access < 2) {
-                echo json_encode(['success' => false, 'message' => 'Anda tidak memiliki hak akses untuk menambah proyek.']);
-                exit;
+                mpJson(['success' => false, 'message' => 'Anda tidak memiliki hak akses untuk menambah proyek.']);
             }
             if ($task === 'update' && $access < 3) {
-                echo json_encode(['success' => false, 'message' => 'Anda tidak memiliki hak akses untuk mengubah proyek.']);
-                exit;
+                mpJson(['success' => false, 'message' => 'Anda tidak memiliki hak akses untuk mengubah proyek.']);
             }
 
             $id             = (int)($_REQUEST['id'] ?? 0);
@@ -119,23 +127,27 @@ try {
             $client_id      = ($_REQUEST['client_id'] ?? '') !== '' ? (int)$_REQUEST['client_id'] : null;
             $pic_id         = ($_REQUEST['pic_id'] ?? '') !== '' ? (int)$_REQUEST['pic_id'] : null;
             $location_id    = ($_REQUEST['location_id'] ?? '') !== '' ? (int)$_REQUEST['location_id'] : null;
-            $start_date     = $_REQUEST['start_date'] ?: null;
-            $end_date       = $_REQUEST['end_date'] ?: null;
-            $budget         = (float)($_REQUEST['budget'] ?? 0);
-            $contract_value = (float)($_REQUEST['contract_value'] ?? 0);
-            $progress       = (int)($_REQUEST['progress'] ?? 0);
+            $start_date     = ($_REQUEST['start_date'] ?? '') ?: null;
+            $end_date       = ($_REQUEST['end_date'] ?? '') ?: null;
             $status         = $_REQUEST['status'] ?? 'Berjalan';
             $notes          = $_REQUEST['notes'] ?? '';
+
+            // [FIX] angka: null = tidak dikirim -> pada UPDATE nilai lama dipertahankan
+            $budget         = (isset($_REQUEST['budget']) && $_REQUEST['budget'] !== '') ? (float)$_REQUEST['budget'] : null;
+            $contract_value = (isset($_REQUEST['contract_value']) && $_REQUEST['contract_value'] !== '') ? (float)$_REQUEST['contract_value'] : null;
+            $progress       = (isset($_REQUEST['progress']) && $_REQUEST['progress'] !== '') ? (int)$_REQUEST['progress'] : null;
 
             if ($name === '') throw new Exception('Nama Proyek wajib diisi.');
             if (!in_array($status, ['Belum Mulai', 'Berjalan', 'Tertunda', 'Selesai'], true)) {
                 throw new Exception('Status proyek tidak valid.');
             }
-            if ($progress < 0 || $progress > 100) throw new Exception('Progress harus antara 0-100.');
+            if ($progress !== null && ($progress < 0 || $progress > 100)) throw new Exception('Progress harus antara 0-100.');
             if ($end_date && $start_date && $end_date < $start_date) {
                 throw new Exception('Tanggal Selesai tidak boleh sebelum Tanggal Mulai.');
             }
-            if ($budget < 0 || $contract_value < 0) throw new Exception('Budget/Nilai Kontrak tidak boleh negatif.');
+            if (($budget !== null && $budget < 0) || ($contract_value !== null && $contract_value < 0)) {
+                throw new Exception('Budget/Nilai Kontrak tidak boleh negatif.');
+            }
 
             if ($task === 'create') {
                 $newId = (int)mpFetchOne($db,
@@ -144,53 +156,59 @@ try {
                      VALUES (:name, :cid, :pid, :lid, :sd, :ed, :budget, :cv, :progress, :status, :notes, NOW(), NOW())
                      RETURNING id",
                     ['name' => $name, 'cid' => $client_id, 'pid' => $pic_id, 'lid' => $location_id,
-                     'sd' => $start_date, 'ed' => $end_date, 'budget' => $budget, 'cv' => $contract_value,
-                     'progress' => $progress, 'status' => $status, 'notes' => $notes],
+                     'sd' => $start_date, 'ed' => $end_date,
+                     'budget' => $budget ?? 0, 'cv' => $contract_value ?? 0,
+                     'progress' => $progress ?? 0, 'status' => $status, 'notes' => $notes],
                     'insert projects')['id'];
-                echo json_encode(['success' => true, 'id' => $newId, 'message' => "Proyek '{$name}' berhasil ditambahkan."]);
+                mpJson(['success' => true, 'id' => $newId, 'message' => "Proyek '{$name}' berhasil ditambahkan."]);
             } else {
                 if (!$id) throw new Exception('ID proyek tidak valid.');
+                // [FIX] COALESCE: kolom angka yang tidak dikirim tidak ditimpa 0
                 mpExec($db,
                     "UPDATE projects SET
                         name = :name, client_id = :cid, pic_id = :pid, location_id = :lid,
-                        start_date = :sd, end_date = :ed, budget = :budget, contract_value = :cv,
-                        progress = :progress, status = :status, notes = :notes, updated_at = NOW()
+                        start_date = :sd, end_date = :ed,
+                        budget = COALESCE(CAST(:budget AS numeric), budget),
+                        contract_value = COALESCE(CAST(:cv AS numeric), contract_value),
+                        progress = COALESCE(CAST(:progress AS smallint), progress),
+                        status = :status, notes = :notes, updated_at = NOW()
                      WHERE id = :id",
                     ['name' => $name, 'cid' => $client_id, 'pid' => $pic_id, 'lid' => $location_id,
-                     'sd' => $start_date, 'ed' => $end_date, 'budget' => $budget, 'cv' => $contract_value,
-                     'progress' => $progress, 'status' => $status, 'notes' => $notes, 'id' => $id],
+                     'sd' => $start_date, 'ed' => $end_date,
+                     'budget' => $budget, 'cv' => $contract_value, 'progress' => $progress,
+                     'status' => $status, 'notes' => $notes, 'id' => $id],
                     'update projects');
-                echo json_encode(['success' => true, 'message' => "Proyek '{$name}' berhasil diperbarui."]);
+                mpJson(['success' => true, 'message' => "Proyek '{$name}' berhasil diperbarui."]);
             }
             break;
 
         case 'delete':
             if ($access < 4) {
-                echo json_encode(['success' => false, 'message' => 'Anda tidak memiliki hak akses untuk menghapus proyek.']);
-                exit;
+                mpJson(['success' => false, 'message' => 'Anda tidak memiliki hak akses untuk menghapus proyek.']);
             }
             $id = (int)($_REQUEST['id'] ?? 0);
             if (!$id) throw new Exception('ID proyek tidak valid.');
 
             $refs = mpFetchOne($db,
                 "SELECT
-                    (SELECT COUNT(*) FROM purchase_orders WHERE project_id = :id) AS po_count,
-                    (SELECT COUNT(*) FROM project_invoices WHERE project_id = :id) AS termin_count,
-                    (SELECT COUNT(*) FROM material_out_header WHERE project_id = :id) AS mout_count",
-                ['id' => $id], 'cek referensi proyek');
+                    (SELECT COUNT(*) FROM purchase_orders WHERE project_id = :id1) AS po_count,
+                    (SELECT COUNT(*) FROM project_invoices WHERE project_id = :id2) AS termin_count,
+                    (SELECT COUNT(*) FROM material_out_header WHERE project_id = :id3) AS mout_count",
+                ['id1' => $id, 'id2' => $id, 'id3' => $id], 'cek referensi proyek');   // [FIX] placeholder unik per pemakaian
             $refCount = (int)$refs['po_count'] + (int)$refs['termin_count'] + (int)$refs['mout_count'];
             if ($refCount > 0) {
                 throw new Exception("Proyek ini tidak bisa dihapus karena sudah punya transaksi terkait (PO: {$refs['po_count']}, Termin: {$refs['termin_count']}, Pemakaian Material: {$refs['mout_count']}).");
             }
 
             mpExec($db, "DELETE FROM projects WHERE id = :id", ['id' => $id], 'delete projects');
-            echo json_encode(['success' => true, 'message' => 'Proyek berhasil dihapus.']);
+            mpJson(['success' => true, 'message' => 'Proyek berhasil dihapus.']);
             break;
 
         default:
-            echo json_encode(['success' => false, 'message' => 'Task tidak dikenali.']);
+            mpJson(['success' => false, 'message' => 'Task tidak dikenali.']);
             break;
     }
 } catch (Throwable $e) {
-    echo json_encode(['success' => false, 'message' => $e->getMessage() !== '' ? $e->getMessage() : 'Terjadi kesalahan pada server.']);
+    error_log('[m.proyekCRD] ' . $e->getMessage());
+    mpJson(['success' => false, 'message' => $e->getMessage() !== '' ? $e->getMessage() : 'Terjadi kesalahan pada server.']);
 }

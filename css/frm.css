@@ -11,6 +11,9 @@
 /* --------------------------------------------------------------------
    1. ELIMINASI KEBOCORAN BACKGROUND PUTIH (PANEL, TOOLBAR & WINDOW)
    -------------------------------------------------------------------- */
+body {
+   background: none; 
+}
 .x-window,
 .x-window-body,
 .x-window-mc,
@@ -171,7 +174,7 @@ button#saveEdit {
 #saveEdit:hover,
 button#saveEdit:hover,
 .btn-save:hover {
-    background: rgba(239, 68, 68, 0.18) !important;
+    background: rgba(239, 68, 68, 0.30) !important;
     color: #fecaca !important;
 }
 
@@ -189,7 +192,7 @@ button#popCancel {
 button#popCancel:hover,
 button#discardEdit:hover,
 .btn-discard:hover {
-    background: rgba(16, 185, 129, 0.18) !important;
+    background: rgba(16, 185, 129, 0.30) !important;
     color: #a7f3d0 !important;
 }
 
@@ -240,7 +243,11 @@ button#discardEdit:hover,
 /* --------------------------------------------------------------------
    6. MODAL EDITOR (RAB, dll): HILANGKAN LATAR BEIGE, SAMAKAN DENGAN SUPPLIER PAYMENT
    -------------------------------------------------------------------- */
-#editorWdw,
+#editorWdw
+{
+    background-color: #66666650 !important;
+    background-image: none !important;
+}
 #editorForm,
 #editorForm > div,
 div:has(> #editorFormHeaderText),
@@ -249,7 +256,13 @@ div:has(> #editorFormHeaderText),
     background-color: #050d18 !important;
     background-image: none !important;
 }
-
+#editorForm, #addForm, #uploadForm, #prnForm
+ {
+    border-left: solid 7px #9a9a9a;
+    border-top: 2px solid #ffffff;
+    border-bottom: 2px solid #ffffff;
+    border-right: 1.5px solid #ffffff;
+ }
 /* Judul modal: putih, italic-bold seperti Supplier Payment */
 #editorFormHeaderText,
 #addFormHeaderText {
@@ -588,4 +601,15 @@ body .x-grid3 [class*="DeleteBtn" i] {
 body .x-grid3 [class*="DeleteBtn" i]:hover {
     opacity: 1;
     transform: scale(1.2);
+}
+#menuForm a, #menuFormEditor a {
+    float: right;
+    font-family: arial;
+    font-size: 16px ;
+    font-style: normal;
+    font-weight: bolder;
+    width: 60px;
+    text-decoration: none;
+    text-align: center;
+    border-radius: 4px;
 }
