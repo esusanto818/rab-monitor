@@ -1,0 +1,198 @@
+/******************************************************************************/
+/* FIX: WEB BASE COLOR TO DARK BLUE & FULL SYSTEM MATCHING                    */
+/******************************************************************************/
+
+/* 1. Warna Latar Belakang Utama Aplikasi & Web Page */
+html, body {
+    background-color: #020c1b !important;   /* Dark Blue / Navy Gelap */
+    color: #89b3d9 !important;
+    font-family: 'Inter', 'Segoe UI', sans-serif !important;
+}
+
+/* Sembunyikan Layer Overlay Lama jika Ada */
+.layerBackGround {
+    display: none !important;
+}
+
+/* Latar Belakang Container Utama ExtJS Panel & Viewport */
+body .x-panel-body,
+body .x-grid3,
+body .x-grid3-viewport,
+body .x-grid3-scroller,
+#container,
+#content {
+    background-color: #020c1b !important;
+}
+
+/* 2. Main Grid Header */
+body .x-grid3-header,
+body .x-grid3-header-inner,
+body .x-grid3-hd-row,
+body .x-grid3-hd-row td,
+body td.x-grid3-hd,
+body td.x-grid3-hd-over,
+body td.x-grid3-hd-click,
+body td.x-grid3-hd-menu-open,
+body .x-grid3-hd-inner,
+body .x-grid3-hd-tool {
+    background-color: #041426 !important;   /* Dark Blue Header */
+    background-image: none !important;
+    border-top: none !important;
+    border-bottom: 1px solid #0a2d4a !important;
+    border-right: 1px solid rgba(10, 45, 74, 0.3) !important;
+}
+
+body .x-grid3-hd-inner,
+body .x-grid3-hd-inner div,
+body .x-grid3-hd-inner a,
+body .x-grid3-hd-btn {
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* 3. Baris Data Grid Utama (Normal & Zebra Striping) */
+body .x-grid3-row,
+body .x-grid3-row td,
+body .x-grid3-cell,
+body .x-grid3-cell-inner {
+    background-color: #020c1b !important;   /* Dark Blue Match Page Base */
+    background-image: none !important;
+    color: #89b3d9 !important;
+    border-top: none !important;
+    border-bottom: 1px solid #07192b !important;
+    border-left: none !important;
+    border-right: none !important;
+    font-size: 12px !important;
+    outline: none !important;
+}
+
+body .x-grid3-row-alt,
+body .x-grid3-row-alt td,
+body .x-grid3-row-alt .x-grid3-cell-inner {
+    background-color: #041224 !important;   /* Soft Dark Blue Zebra */
+}
+
+/* 4. Hover Condition (Tanpa Box Border, Murni Accent Dark Blue) */
+body .x-grid3-row-over,
+body .x-grid3-row-over td,
+body .x-grid3-row-over .x-grid3-cell,
+body .x-grid3-row-over .x-grid3-cell-inner {
+    background-color: #082138 !important;
+    background-image: none !important;
+    color: #38bdf8 !important;
+    border-top: none !important;
+    border-bottom: 1px solid #07192b !important;
+    border-left: none !important;
+    border-right: none !important;
+    outline: none !important;
+}
+
+/* 5. Selection Condition (Gaya Kurs Pajak - Soft Dark Blue Active) */
+body .x-grid3-row-selected,
+body .x-grid3-row-selected td,
+body .x-grid3-row-selected .x-grid3-cell,
+body .x-grid3-row-selected .x-grid3-cell-inner {
+    background-color: #0a2d4a !important;   /* Dark Blue Selection */
+    background-image: none !important;
+    color: #ffffff !important;
+    border-top: none !important;
+    border-bottom: 1px solid #0d3b61 !important;
+    border-left: none !important;
+    border-right: none !important;
+    outline: none !important;
+}
+
+body .x-grid3-row-selected *,
+body .x-grid3-row-selected .x-grid3-cell-inner,
+body .x-grid3-row-selected .x-grid3-cell-inner span,
+body .x-grid3-row-selected .x-grid3-cell-inner a {
+    color: #ffffff !important;
+    font-weight: 600 !important;
+}
+
+/* 6. Panel Detail / Rincian (Gradient Blue) */
+.detail-panel-container {
+    padding: 15px;
+    margin-top: 10px;
+    border-radius: 6px;
+    background: linear-gradient(180deg, #0d2838 0%, #061522 100%) !important;
+    border: 1px solid rgba(56, 189, 248, 0.3) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+}
+
+.detail-title {
+    color: #38bdf8 !important;
+    font-size: 1.3rem;
+    line-height: 1.4;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    opacity: 1 !important;
+    font-family: 'Rajdhani', sans-serif, 'Lato';
+}
+
+.detail-hr {
+    border: none !important;
+    border-top: 1px solid #1a3a52 !important;
+    margin-bottom: 12px;
+    opacity: 1 !important;
+}
+
+.detail-table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.detail-table th,
+.detail-table td {
+    color: #cbd5e1 !important;
+    font-size: 12px;
+    padding: 8px 10px;
+    opacity: 1 !important;
+    border-bottom: 1px solid rgba(26, 58, 82, 0.5) !important;
+}
+
+.detail-table tr.header-row th {
+    color: #38bdf8 !important;
+    font-size: 13px;
+    font-weight: bold;
+    padding: 8px;
+    border-bottom: 1px solid #1a3a52 !important;
+}
+
+.detail-table th.align-right,
+.detail-table td.align-right,
+.detail-table th:nth-child(4),
+.detail-table td:nth-child(4),
+.detail-table th:nth-child(5),
+.detail-table td:nth-child(5),
+.detail-table th:nth-child(6),
+.detail-table td:nth-child(6) {
+    text-align: right !important;
+}
+
+.link-rab-manual {
+    color: #94a3b8 !important;
+}
+
+.link-rab-active {
+    color: #10b981 !important;
+}
+
+.detail-table .subtotal-val {
+    color: #38bdf8 !important;
+    text-align: right !important;
+    font-weight: 600;
+}
+
+.detail-table .total-row td,
+.detail-table .total-row .total-label,
+.detail-table .total-row .total-val {
+    padding-top: 12px;
+    font-weight: bold;
+    color: #38bdf8 !important;
+    text-align: right !important;
+    border-top: 1px dashed #1a3a52 !important;
+}

@@ -1,0 +1,30 @@
+<?php
+    /*
+    Document        : General Ledger
+    Description     : Laporan buku besar per akun per periode (read-only)
+    File related    : - m.generalledgerCRD.php (report handler)
+    */
+    include "../php-func/user.valid.php";
+    include "../includes/many-template-icn.php";
+?>
+<html>
+    <head>
+        <title id="page-title">[GL]General Ledger</title>
+        <link rel="stylesheet" type="text/css" href="/proyek/ext/resources/css/ext-all.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
+    </head>
+    <body>
+    </body>
+    <script type="text/javascript">
+        window.formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 0)); ?>;
+    </script>
+    <script type="text/javascript" src="/proyek/js/generalledger.js"></script>
+    <script type="text/javascript">
+        document.getElementById('menu').innerHTML = <?php echo json_encode($_SESSION["linkMenu"] ?? ''); ?>;
+        document.getElementById("mainHeaderText").innerHTML = "General <em>Ledger</em>";
+        document.getElementById('editorWdw').style.display = 'none';
+
+
+
+    </script>
+</html>

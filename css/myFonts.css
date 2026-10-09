@@ -1,0 +1,394 @@
+/* Google Material Icons */
+@font-face {
+  font-display: block;
+  font-family: 'Material Icons';
+  font-style: normal;
+  font-weight: 400;
+  src: url(../fonts/MaterialIcons-Regular.eot); /* For IE6-8 */
+  src: local('Material Icons'),
+       local('MaterialIcons-Regular'),
+       url(../fonts/MaterialIcons-Regular.woff2) format('woff2'),
+       url(../fonts/MaterialIcons-Regular.woff) format('woff'),
+       url(../fonts/MaterialIcons-Regular.ttf) format('truetype');
+}
+/* Google Roboto Fonts */
+@font-face {
+    font-family: 'robotoblack';
+    src: url(../fonts/roboto/roboto_black/Roboto-Black-webfont.eot);
+    src: url(../fonts/roboto/roboto_black/Roboto-Black-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_black/Roboto-Black-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_black/Roboto-Black-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_black/Roboto-Black-webfont.svg#robotoblack) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotoblack_italic';
+    src: url(../fonts/roboto/roboto_blackitalic/Roboto-BlackItalic-webfont.eot);
+    src: url(../fonts/roboto/roboto_blackitalic/Roboto-BlackItalic-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_blackitalic/Roboto-BlackItalic-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_blackitalic/Roboto-BlackItalic-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_blackitalic/Roboto-BlackItalic-webfont.svg#robotoblack_italic) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotobold';
+    src: url(../fonts/roboto/roboto_bold/Roboto-Bold-webfont.eot);
+    src: url(../fonts/roboto/roboto_bold/Roboto-Bold-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_bold/Roboto-Bold-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_bold/Roboto-Bold-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_bold/Roboto-Bold-webfont.svg#robotobold) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'roboto_condensedbold';
+    src: url(../fonts/roboto/roboto_boldcondensed/RobotoCondensed-Bold-webfont.eot);
+    src: url(../fonts/roboto/roboto_boldcondensed/RobotoCondensed-Bold-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_boldcondensed/RobotoCondensed-Bold-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_boldcondensed/RobotoCondensed-Bold-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_boldcondensed/RobotoCondensed-Bold-webfont.svg#roboto_conensedbold) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'roboto_condensedbold_italic';
+    src: url(../fonts/roboto/roboto_boldcondenseditalic/RobotoCondensed-BoldItalic-webfont.eot);
+    src: url(../fonts/roboto/roboto_boldcondenseditalic/RobotoCondensed-BoldItalic-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_boldcondenseditalic/RobotoCondensed-BoldItalic-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_boldcondenseditalic/RobotoCondensed-BoldItalic-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_boldcondenseditalic/RobotoCondensed-BoldItalic-webfont.svg#roboto_condensedbold_italic) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotobold_italic';
+    src: url(../fonts/roboto/roboto_bolditalic/Roboto-BoldItalic-webfont.eot);
+    src: url(../fonts/roboto/roboto_bolditalic/Roboto-BoldItalic-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_bolditalic/Roboto-BoldItalic-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_bolditalic/Roboto-BoldItalic-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_bolditalic/Roboto-BoldItalic-webfont.svg#robotobold_italic) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'roboto_condensedregular';
+    src: url(../fonts/roboto/roboto_condensed/RobotoCondensed-Regular-webfont.eot);
+    src: url(../fonts/roboto/roboto_condensed/RobotoCondensed-Regular-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_condensed/RobotoCondensed-Regular-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_condensed/RobotoCondensed-Regular-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_condensed/RobotoCondensed-Regular-webfont.svg#roboto_condensedregular) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'roboto_condenseditalic';
+    src: url(../fonts/roboto/roboto_condenseditalic/RobotoCondensed-Italic-webfont.eot);
+    src: url(../fonts/roboto/roboto_condenseditalic/RobotoCondensed-Italic-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_condenseditalic/RobotoCondensed-Italic-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_condenseditalic/RobotoCondensed-Italic-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_condenseditalic/RobotoCondensed-Italic-webfont.svg#roboto_condenseditalic) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotoitalic';
+    src: url(../fonts/roboto/roboto_italic/Roboto-Italic-webfont.eot);
+    src: url(../fonts/roboto/roboto_italic/Roboto-Italic-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_italic/Roboto-Italic-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_italic/Roboto-Italic-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_italic/Roboto-Italic-webfont.svg#robotoitalic) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotolight';
+    src: url(../fonts/roboto/roboto_light/Roboto-Light-webfont.eot);
+    src: url(../fonts/roboto/roboto_light/Roboto-Light-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_light/Roboto-Light-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_light/Roboto-Light-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_light/Roboto-Light-webfont.svg#robotolight) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'roboto_condensedlight';
+    src: url(../fonts/roboto/roboto_lightcondensed/RobotoCondensed-Light-webfont.eot);
+    src: url(../fonts/roboto/roboto_lightcondensed/RobotoCondensed-Light-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_lightcondensed/RobotoCondensed-Light-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_lightcondensed/RobotoCondensed-Light-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_lightcondensed/RobotoCondensed-Light-webfont.svg#roboto_condensedlight) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'roboto_condensedlight_italic';
+    src: url(../fonts/roboto/roboto_lightcondenseditalic/RobotoCondensed-LightItalic-webfont.eot);
+    src: url(../fonts/roboto/roboto_lightcondenseditalic/RobotoCondensed-LightItalic-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_lightcondenseditalic/RobotoCondensed-LightItalic-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_lightcondenseditalic/RobotoCondensed-LightItalic-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_lightcondenseditalic/RobotoCondensed-LightItalic-webfont.svg#roboto_condensedlight_italic) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotolight_italic';
+    src: url(../fonts/roboto/roboto_lightitalic/Roboto-LightItalic-webfont.eot);
+    src: url(../fonts/roboto/roboto_lightitalic/Roboto-LightItalic-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_lightitalic/Roboto-LightItalic-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_lightitalic/Roboto-LightItalic-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_lightitalic/Roboto-LightItalic-webfont.svg#robotolight_italic) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotomedium';
+    src: url(../fonts/roboto/roboto_medium/Roboto-Medium-webfont.eot);
+    src: url(../fonts/roboto/roboto_medium/Roboto-Medium-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_medium/Roboto-Medium-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_medium/Roboto-Medium-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_medium/Roboto-Medium-webfont.svg#robotomedium) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotomedium_italic';
+    src: url(../fonts/roboto/roboto_mediumitalic/Roboto-MediumItalic-webfont.eot);
+    src: url(../fonts/roboto/roboto_mediumitalic/Roboto-MediumItalic-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_mediumitalic/Roboto-MediumItalic-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_mediumitalic/Roboto-MediumItalic-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_mediumitalic/Roboto-MediumItalic-webfont.svg#robotomedium_italic) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotoregular';
+    src: url(../fonts/roboto/roboto_regular/Roboto-Regular-webfont.eot);
+    src: url(../fonts/roboto/roboto_regular/Roboto-Regular-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_regular/Roboto-Regular-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_regular/Roboto-Regular-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_regular/Roboto-Regular-webfont.svg#robotoregular) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotothin';
+    src: url(../fonts/roboto/roboto_thin/Roboto-Thin-webfont.eot);
+    src: url(../fonts/roboto/roboto_thin/Roboto-Thin-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_thin/Roboto-Thin-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_thin/Roboto-Thin-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_thin/Roboto-Thin-webfont.svg#robotothin) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'robotothin_italic';
+    src: url(../fonts/roboto/roboto_thinitalic/Roboto-ThinItalic-webfont.eot);
+    src: url(../fonts/roboto/roboto_thinitalic/Roboto-ThinItalic-webfont.eot?#iefix) format('embedded-opentype'),
+         url(../fonts/roboto/roboto_thinitalic/Roboto-ThinItalic-webfont.woff) format('woff'),
+         url(../fonts/roboto/roboto_thinitalic/Roboto-ThinItalic-webfont.ttf) format('truetype'),
+         url(../fonts/roboto/roboto_thinitalic/Roboto-ThinItalic-webfont.svg#robotothin_italic) format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+/* Lato Fonts */
+/*@font-face {font-family: 'Lato Black'; src: url(../fonts/lato/Lato-Black.ttf);}
+@font-face {font-family: 'Lato Black Italic'; src: url(../fonts/lato/Lato-BlackItalic.ttf);}
+@font-face {font-family: 'Lato Bold'; src: url(../fonts/lato/Lato-Bold.ttf);}
+@font-face {font-family: 'Lato Bold Italic'; src: url(../fonts/lato/Lato-BoldItalic.ttf);}
+@font-face {font-family: 'Lato Hairline'; src: url(../fonts/lato/Lato-Hairline.ttf);}
+@font-face {font-family: 'Lato Hairline Italic'; src: url(../fonts/lato/Lato-HairlineItalic.ttf);}
+@font-face {font-family: 'Lato Heavy'; src: url(../fonts/lato/Lato-Heavy.ttf);}
+@font-face {font-family: 'Lato Heavy Italic'; src: url(../fonts/lato/Lato-HeavyItalic.ttf);}
+@font-face {font-family: 'Lato Italic'; src: url(../fonts/lato/Lato-Italic.ttf);}*/
+@font-face {font-display: block; font-family: 'Lato Light'; src: url(../fonts/lato/Lato-Light.ttf);}
+@font-face {font-family: 'Lato Bold'; src: url(../fonts/lato/Lato-Bold.ttf);}
+@font-face {font-family: 'Lato Heavy'; src: url(../fonts/lato/Lato-Heavy.ttf);}
+
+/*@font-face {font-family: 'Lato Light Italic'; src: url(../fonts/lato/Lato-LightItalic.ttf);}
+@font-face {font-family: 'Lato Medium'; src: url(../fonts/lato/Lato-Medium.ttf);}
+@font-face {font-family: 'Lato Medium Italic'; src: url(../fonts/lato/Lato-MediumItalic.ttf);}*/
+@font-face {font-display: block; font-family: 'Lato Regular'; src: url(../fonts/lato/Lato-Regular.ttf);}
+/*@font-face {font-family: 'Lato Semibold'; src: url(../fonts/lato/Lato-Semibold.ttf);}
+@font-face {font-family: 'Lato Semibold Italic'; src: url(../fonts/lato/Lato-SemiboldItalic.ttf);}
+@font-face {font-family: 'Lato Thin'; src: url(../fonts/lato/Lato-Thin.ttf);}
+@font-face {font-family: 'Lato Thin Italic'; src: url(../fonts/lato/Lato-ThinItalic.ttf);}*/
+
+@font-face {font-display: block; font-family: 'Bri'; src: url(../fonts/BRI293.TTF);}
+@font-face {font-family: 'Bri-Heavy'; src: url(../fonts/brie-heavy.ttf);}*/
+
+/*@font-face {font-family: 'Bri-Medium'; src: url(../fonts/brie-medium.ttf);}
+@font-face {font-family: 'Bri-Heavy'; src: url(../fonts/brie-heavy.ttf);}*/
+
+/*@font-face {font-family: 'Gidole-Regular'; src: url(../fonts/Gidole-Regular.otf);}
+@font-face {font-family: 'Alcubierre'; src: url(../fonts/Alcubierre.otf);}
+@font-face {font-family: 'Anders'; src: url(../fonts/Anders.ttf);}
+@font-face {font-family: 'aqua'; src: url(../fonts/aqua.ttf);}
+@font-face {font-family: 'Arciform'; src: url(../fonts/Arciform.otf);}
+@font-face {font-family: 'Ailerons-Typeface'; src: url(../fonts/Ailerons-Typeface.otf);}
+@font-face {font-family: 'Lombok'; src: url(../fonts/Lombok.otf);}
+@font-face {font-family: 'moderne_sans'; src: url(../fonts/moderne_sans.ttf);}
+@font-face {font-family: 'Liquide'; src: url(../fonts/Liquide.ttf);}
+@font-face {font-family: 'Akashi'; src: url(../fonts/Akashi.ttf);}*/
+
+/*@font-face {font-family: 'Exo-Black'; src: url(../fonts/exo/Exo-Black.otf);}
+@font-face {font-family: 'Exo-BlackItalic'; src: url(../fonts/exo/Exo-BlackItalic.otf);}
+@font-face {font-family: 'Exo-Bold'; src: url(../fonts/exo/Exo-Bold.otf);}
+@font-face {font-family: 'Exo-BoldItalic'; src: url(../fonts/exo/Exo-BoldItalic.otf);}
+@font-face {font-family: 'Exo-ExtraBold'; src: url(../fonts/exo/Exo-ExtraBold.otf);}
+@font-face {font-family: 'Exo-ExtraBoldItalic'; src: url(../fonts/exo/Exo-ExtraBoldItalic.otf);}
+@font-face {font-family: 'Exo-ExtraLight'; src: url(../fonts/exo/Exo-ExtraLight.otf);}
+@font-face {font-family: 'Exo-ExtraLightItalic'; src: url(../fonts/exo/Exo-ExtraLightItalic.otf);}
+@font-face {font-family: 'Exo-Italic'; src: url(../fonts/exo/Exo-Italic.otf);}
+@font-face {font-family: 'Exo-Light'; src: url(../fonts/exo/Exo-Light.otf);}
+@font-face {font-family: 'Exo-LightItalic'; src: url(../fonts/exo/Exo-LightItalic.otf);}
+@font-face {font-family: 'Exo-Medium'; src: url(../fonts/exo/Exo-Medium.otf);}
+@font-face {font-family: 'Exo-MediumItalic'; src: url(../fonts/exo/Exo-MediumItalic.otf);}*/
+@font-face {font-display: block; font-family: 'Exo-Regular'; src: url(../fonts/exo/Exo-Regular.otf);}
+/*@font-face {font-family: 'Exo-SemiBold'; src: url(../fonts/exo/Exo-SemiBold.otf);}
+@font-face {font-family: 'Exo-SemiBoldItalic'; src: url(../fonts/exo/Exo-SemiBoldItalic.otf);}
+@font-face {font-family: 'Exo-Thin'; src: url(../fonts/exo/Exo-Thin.otf);}
+@font-face {font-family: 'Exo-ThinItalic'; src: url(../fonts/exo/Exo-ThinItalic.otf);}*/
+/*@font-face {font-family: 'Glamor-Bold'; src: url(../fonts/Glamor/Glamor-Bold.ttf);}
+@font-face {font-family: 'Glamor-BoldCondensed'; src: url(../fonts/Glamor/Glamor-BoldCondensed.ttf);}
+@font-face {font-family: 'Glamor-BoldCondensedItalic'; src: url(../fonts/Glamor/Glamor-BoldCondensedItalic.ttf);}
+@font-face {font-family: 'Glamor-BoldExtended'; src: url(../fonts/Glamor/Glamor-BoldExtended.ttf);}
+@font-face {font-family: 'Glamor-BoldExtendedItalic'; src: url(../fonts/Glamor/Glamor-BoldExtendedItalic.ttf);}
+@font-face {font-family: 'Glamor-BoldItalic'; src: url(../fonts/Glamor/Glamor-BoldItalic.ttf);}
+@font-face {font-family: 'Glamor-Condensed'; src: url(../fonts/Glamor/Glamor-Condensed.ttf);}
+@font-face {font-family: 'Glamor-CondensedItalic'; src: url(../fonts/Glamor/Glamor-CondensedItalic.ttf);}
+@font-face {font-family: 'Glamor-Extended'; src: url(../fonts/Glamor/Glamor-Extended.ttf);}
+@font-face {font-family: 'Glamor-ExtendedItalic'; src: url(../fonts/Glamor/Glamor-ExtendedItalic.ttf);}
+@font-face {font-family: 'Glamor-Italic'; src: url(../fonts/Glamor/Glamor-Italic.ttf);}
+@font-face {font-family: 'Glamor-Light'; src: url(../fonts/Glamor/Glamor-Light.ttf);}
+@font-face {font-family: 'Glamor-LightCondensed'; src: url(../fonts/Glamor/Glamor-LightCondensed.ttf);}
+@font-face {font-family: 'Glamor-LightCondensedItalic'; src: url(../fonts/Glamor/Glamor-LightCondensedItalic.ttf);}
+@font-face {font-family: 'Glamor-LightExtended'; src: url(../fonts/Glamor/Glamor-LightExtended.ttf);}
+@font-face {font-family: 'Glamor-LightExtendedItalic'; src: url(../fonts/Glamor/Glamor-LightExtendedItalic.ttf);}
+@font-face {font-family: 'Glamor-LightItalic'; src: url(../fonts/Glamor/Glamor-LightItalic.ttf);}
+@font-face {font-family: 'Glamor-Medium'; src: url(../fonts/Glamor/Glamor-Medium.ttf);}
+@font-face {font-family: 'Glamor-MediumCondensed'; src: url(../fonts/Glamor/Glamor-MediumCondensed.ttf);}
+@font-face {font-family: 'Glamor-MediumCondensedItali'; src: url(../fonts/Glamor/Glamor-MediumCondensedItali.ttf);}
+@font-face {font-family: 'Glamor-MediumExtended'; src: url(../fonts/Glamor/Glamor-MediumExtended.ttf);}
+@font-face {font-family: 'Glamor-MediumExtendedItalic'; src: url(../fonts/Glamor/Glamor-MediumExtendedItalic.ttf);}
+@font-face {font-family: 'Glamor-MediumItalic'; src: url(../fonts/Glamor/Glamor-MediumItalic.ttf);}
+@font-face {font-family: 'Glamor-Regular'; src: url(../fonts/Glamor/Glamor-Regular.ttf);}*/
+
+/*@font-face {font-family: 'Moon-Bold'; src: url(../fonts/moon_bold.otf);}
+@font-face {font-family: 'Moon-Light'; src: url(../fonts/moon_light.otf);}
+
+@font-face {font-family: 'Ikaros-Regular'; src: url(../fonts/Ikaros-Regular.otf);}
+@font-face {font-family: 'Ikaros-Light'; src: url(../fonts/Ikaros-Light.otf);}
+@font-face {font-family: 'ArchivoNarrow-Bold'; src: url(../fonts/ArchivoNarrow-Bold.ttf);}
+@font-face {font-family: 'ArchivoNarrow-BoldItalic'; src: url(../fonts/ArchivoNarrow-BoldItalic.ttf);}
+@font-face {font-family: 'ArchivoNarrow-Italic'; src: url(../fonts/ArchivoNarrow-Italic.ttf);}
+@font-face {font-family: 'ArchivoNarrow-Regular'; src: url(../fonts/ArchivoNarrow-Regular.ttf);}
+
+@font-face {font-family: 'GlacialIndifference-Bold'; src: url(../fonts/GlacialIndifference-Bold.otf);}
+@font-face {font-family: 'GlacialIndifference-Regular'; src: url(../fonts/GlacialIndifference-Regular.otf);}*/
+/* Antipasto Font's */
+/*@font-face {font-family: 'antipasto_extralight'; src: url(../fonts/antipasto/Antipasto_extralight.otf);}
+@font-face {font-family: 'antipasto_regular'; src: url(../fonts/antipasto/Antipasto_regular.otf);}*/
+
+/* SourceSansPro Font's */
+/*@font-face {font-family: 'SourceSansPro-ExtraLight'; src: url(../fonts/source-sans-pro/SourceSansPro-ExtraLight.otf);}
+@font-face {font-family: 'SourceSansPro-ExtraLightIt'; src: url(../fonts/source-sans-pro/SourceSansPro-ExtraLightIt.otf);}
+@font-face {font-family: 'SourceSansPro-It'; src: url(../fonts/source-sans-pro/SourceSansPro-It.otf);}
+@font-face {font-family: 'SourceSansPro-Regular'; src: url(../fonts/source-sans-pro/SourceSansPro-Regular.otf);}
+@font-face {font-family: 'SourceSansPro-Light'; src: url(../fonts/source-sans-pro/SourceSansPro-Light.otf);}
+@font-face {font-family: 'SourceSansPro-LightIt'; src: url(../fonts/source-sans-pro/SourceSansPro-LightIt.otf);}*/
+
+/* Ubuntu Font's */
+@font-face {font-family: 'Ubuntu-B'; src: url(../fonts/ubuntu/Ubuntu-B.ttf);}
+@font-face {font-family: 'Ubuntu-BI'; src: url(../fonts/ubuntu/Ubuntu-BI.ttf);}
+@font-face {font-family: 'Ubuntu-C'; src: url(../fonts/ubuntu/Ubuntu-C.ttf);}
+@font-face {font-family: 'Ubuntu-M'; src: url(../fonts/ubuntu/Ubuntu-M.ttf);}
+@font-face {font-family: 'Ubuntu-MI'; src: url(../fonts/ubuntu/Ubuntu-MI.ttf);}
+@font-face {font-family: 'Ubuntu-L'; src: url(../fonts/ubuntu/Ubuntu-L.ttf);}
+@font-face {font-family: 'Ubuntu-LI'; src: url(../fonts/ubuntu/Ubuntu-LI.ttf);}
+@font-face {font-family: 'Ubuntu-R'; src: url(../fonts/ubuntu/Ubuntu-R.ttf);}
+@font-face {font-family: 'Ubuntu-RI'; src: url(../fonts/ubuntu/Ubuntu-RI.ttf);}
+@font-face {font-family: 'UbuntuMono-B'; src: url(../fonts/ubuntu/UbuntuMono-B.ttf);}
+@font-face {font-family: 'UbuntuMono-BI'; src: url(../fonts/ubuntu/UbuntuMono-BI.ttf);}
+@font-face {font-family: 'UbuntuMono-R'; src: url(../fonts/ubuntu/UbuntuMono-R.ttf);}
+@font-face {font-family: 'UbuntuMono-RI'; src: url(../fonts/ubuntu/UbuntuMono-RI.ttf);}
+
+/* CaviarDreams Font's */
+/*@font-face {font-family: 'CaviarDreams-B'; src: url(../fonts/CaviarDreams/CaviarDreams-B.ttf);}
+@font-face {font-family: 'CaviarDreams-BI'; src: url(../fonts/CaviarDreams/CaviarDreams-BI.ttf);}
+@font-face {font-family: 'CaviarDreams-I'; src: url(../fonts/CaviarDreams/CaviarDreams-I.ttf);}
+@font-face {font-family: 'CaviarDreams'; src: url(../fonts/CaviarDreams/CaviarDreams.ttf);}*/
+/* Sansation Font's */
+/*@font-face {font-family: 'Sansation-B'; src: url(../fonts/Sansation/Sansation-B.ttf);}
+@font-face {font-family: 'Sansation-BI'; src: url(../fonts/Sansation/Sansation-BI.ttf);}
+@font-face {font-family: 'Sansation-I'; src: url(../fonts/Sansation/Sansation-I.ttf);}
+@font-face {font-family: 'Sansation-R'; src: url(../fonts/Sansation/Sansation-R.ttf);}
+@font-face {font-family: 'Sansation-L'; src: url(../fonts/Sansation/Sansation-L.ttf);}
+@font-face {font-family: 'Sansation-LI'; src: url(../fonts/Sansation/Sansation-LI.ttf);}*/
+/* Titillium Font's */
+/*@font-face {font-family: 'Titillium-Black'; src: url(../fonts/Titillium/Titillium-Black.otf);}
+@font-face {font-family: 'Titillium-Bold'; src: url(../fonts/Titillium/Titillium-Bold.otf);}
+@font-face {font-family: 'Titillium-BoldItalic'; src: url(../fonts/Titillium/Titillium-BoldItalic.otf);}
+@font-face {font-family: 'Titillium-BoldUpright'; src: url(../fonts/Titillium/Titillium-BoldUpright.otf);}
+@font-face {font-family: 'Titillium-Light'; src: url(../fonts/Titillium/Titillium-Light.otf);}
+@font-face {font-family: 'Titillium-LightItalic'; src: url(../fonts/Titillium/Titillium-LightItalic.otf);}
+@font-face {font-family: 'Titillium-LightUpright'; src: url(../fonts/Titillium/Titillium-LightUpright.otf);}
+@font-face {font-family: 'Titillium-Regular'; src: url(../fonts/Titillium/Titillium-Regular.otf);}
+@font-face {font-family: 'Titillium-RegularItalic'; src: url(../fonts/Titillium/Titillium-RegularItalic.otf);}
+@font-face {font-family: 'Titillium-RegularUpright'; src: url(../fonts/Titillium/Titillium-RegularUpright.otf);}
+@font-face {font-family: 'Titillium-Semibold'; src: url(../fonts/Titillium/Titillium-Semibold.otf);}
+@font-face {font-family: 'Titillium-SemiboldItalic'; src: url(../fonts/Titillium/Titillium-SemiboldItalic.otf);}
+@font-face {font-family: 'Titillium-SemiboldUpright'; src: url(../fonts/Titillium/Titillium-SemiboldUpright.otf);}
+@font-face {font-family: 'Titillium-Thin'; src: url(../fonts/Titillium/Titillium-Thin.otf);}
+@font-face {font-family: 'Titillium-ThinItalic'; src: url(../fonts/Titillium/Titillium-ThinItalic.otf);}
+@font-face {font-family: 'Titillium-ThinUpright'; src: url(../fonts/Titillium/Titillium-ThinUpright.otf);}*/
+
+/* Play Font's */
+/*@font-face {font-family: 'Play-Bold'; src: url(../fonts/play/Play-Bold.ttf);}
+@font-face {font-family: 'Play-Regular'; src: url(../fonts/play/Play-Regular.ttf);}*/
+
+/* HelveticaNeue Font's */
+@font-face {font-display: block; font-family: 'HelveticaNeue'; src: url(../fonts/HelveticaNeue.otf);}
+
+/* CooperHewitt Font's */
+/*@font-face {font-family: 'CooperHewitt-Bold'; src: url(../fonts/cooper-hewitt/CooperHewitt-Bold.otf);}
+@font-face {font-family: 'CooperHewitt-BoldItalic'; src: url(../fonts/cooper-hewitt/CooperHewitt-BoldItalic.otf);}
+@font-face {font-family: 'CooperHewitt-Book'; src: url(../fonts/cooper-hewitt/CooperHewitt-Book.otf);}
+@font-face {font-family: 'CooperHewitt-BookItalic'; src: url(../fonts/cooper-hewitt/CooperHewitt-BookItalic.otf);}
+@font-face {font-family: 'CooperHewitt-Heavy'; src: url(../fonts/cooper-hewitt/CooperHewitt-Heavy.otf);}
+@font-face {font-family: 'CooperHewitt-HeavyItalic'; src: url(../fonts/cooper-hewitt/CooperHewitt-HeavyItalic.otf);}
+@font-face {font-family: 'CooperHewitt-Light'; src: url(../fonts/cooper-hewitt/CooperHewitt-Light.otf);}
+@font-face {font-family: 'CooperHewitt-LightItalic'; src: url(../fonts/cooper-hewitt/CooperHewitt-LightItalic.otf);}
+@font-face {font-family: 'CooperHewitt-Medium'; src: url(../fonts/cooper-hewitt/CooperHewitt-Medium.otf);}
+@font-face {font-family: 'CooperHewitt-MediumItalic'; src: url(../fonts/cooper-hewitt/CooperHewitt-MediumItalic.otf);}
+@font-face {font-family: 'CooperHewitt-Semibold'; src: url(../fonts/cooper-hewitt/CooperHewitt-Semibold.otf);}
+@font-face {font-family: 'CooperHewitt-SemiboldItalic'; src: url(../fonts/cooper-hewitt/CooperHewitt-SemiboldItalic.otf);}
+@font-face {font-family: 'CooperHewitt-Thin'; src: url(../fonts/cooper-hewitt/CooperHewitt-Thin.otf);}
+@font-face {font-family: 'CooperHewitt-ThinItalic'; src: url(../fonts/cooper-hewitt/CooperHewitt-ThinItalic.otf);}*/
+
+/* Century School Book Italic Font's */
+@font-face {font-display: block; font-family: 'CenturySBIR'; src: url(../fonts/NewCenturySchlbkLTStd-It.otf);}
+/*@font-face {font-family: 'CenturySBIBLD'; src: url(../fonts/NewCenturySchlbkLTStd-BdIt.otf);}*/
+
+/* Felbridge Font's */
+@font-face {font-display: block; font-family: 'FelbridgeR'; src: url(../fonts/FelbridgeR.otf);}
+/*@font-face {font-family: 'FelbridgeB'; src: url(../fonts/FelbridgeB.otf);}*/
+
+/* Relaway Font's */
+/*@font-face {font-family: 'Raleway-Medium'; src: url(../fonts/raleway/Raleway-Medium.ttf);}*/
+@font-face {font-display: block; font-family: 'Raleway-Regular'; src: url(../fonts/raleway/Raleway-Regular.ttf);}
+/*@font-face {font-family: 'Raleway-SemiBold'; src: url(../fonts/raleway/Raleway-SemiBold.ttf);}
+@font-face {font-family: 'Raleway-Light'; src: url(../fonts/raleway/Raleway-Light.ttf);}*/
+
+/* SFMono Regular Font's */
+@font-face {font-display: block; font-family: 'SFMono'; src: url(../fonts/SFMono-Regular.otf);}
+
+/* Archivo Font's */
+@font-face {font-display: block; font-family: 'Archivo-Regular'; src: url(../fonts/Archivo/Archivo-Regular.ttf);}
+
+/* Rubik Font's */
+@font-face {font-display: block; font-family: 'Rubik-Regular'; src: url(../fonts/Rubik/Rubik-Regular.ttf);}
+
+/* Poppins Font's */
+@font-face {font-display: block; font-family: 'Poppins-Light'; src: url(../fonts/Poppins-Light.ttf);}

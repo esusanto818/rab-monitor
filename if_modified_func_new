@@ -1,0 +1,58 @@
+CREATE OR REPLACE FUNCTION public.if_modified_func()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+    v_app_user text;
+BEGIN
+    -- Ambil app.username dari sesi.
+    -- Parameter 'true' kedua (missing_ok) mencegah exception jika variabel belum diset.
+    -- COALESCE memberikan nilai default (misal: session_user / 'system') jika hasilnya NULL.
+    v_app_user := COALESCE(NULLIF(current_setting('app.username', true), ''), session_user::text);
+
+    IF tg_op = 'UPDATE' THEN
+        INSERT INTO data_log_update (
+            table_name, user_name, app_user_name, action, old_values, new_values, updated_cols, query
+        )
+        VALUES (
+            tg_table_name::text,
+            current_user::text,
+            v_app_user,
+            'u',
+            hstore(old.*),
+            hstore(new.*),
+            akeys(hstore(new.*) - hstore(old.*)),
+            current_query()
+        );
+        RETURN NEW;
+
+    ELSIF tg_op = 'DELETE' THEN
+        INSERT INTO data_log_delete (
+            table_name, user_name, app_user_name, action, old_values, query
+        )
+        VALUES (
+            tg_table_name::text,
+            current_user::text,
+            v_app_user,
+            'd',
+            hstore(old.*),
+            current_query()
+        );
+        RETURN OLD;
+
+    ELSIF tg_op = 'INSERT' THEN
+        INSERT INTO data_log_insert (
+            table_name, user_name, app_user_name, action, new_values, query
+        )
+        VALUES (
+            tg_table_name::text,
+            current_user::text,
+            v_app_user,
+            'i',
+            hstore(new.*),
+            current_query()
+        );
+        RETURN NEW;
+    END IF;
+END;
+$function$;

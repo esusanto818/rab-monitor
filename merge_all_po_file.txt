@@ -1,0 +1,19 @@
+find . -type f \( \
+     -name "po.php" -o \
+     -name "po.js" -o \
+      -name "poCRD.*" -o \
+     -name "function.all.php" -o \
+     -name "crudClass.php" \
+   \) \
+   -not -path "./ext-3.4.1/*" \
+   -not -path "./assets/*" \
+   -not -path "./nbproject/*" \
+   -exec sh -c '
+   for file; do
+     echo "#############"
+     echo "############# File: $file"
+     echo "----------------------------------------"
+     cat "$file"
+     echo ""
+   done
+' sh {} + > proyekgmn_po_code.txt

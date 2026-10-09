@@ -1,0 +1,28 @@
+<?php
+    /*
+    Document      : Master Kurs Pajak (Tax Exchange Rate)
+    Description   : Master Data Kurs Pajak Kemenkeu Mingguan (Non-IDR Payment Reference)
+    File related  : - m.taxexchangerate.js
+                    - m.taxexchangerateCRD.php (CRUD)
+                    - m.taxexchangerate.pdf.php (Printing)
+    */
+    include "../php-func/user.valid.php";
+    include "../includes/many-template-icn.php";
+?>
+<html>
+    <head>
+        <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+        <style>
+            #editorForm { top: 30%; width: 65%; }
+        </style>
+        <title id="page-title">Kurs Pajak (KMK)</title>
+    </head>
+    <body>
+    </body>
+    <script type="text/javascript" src="/proyek/js/m.taxexchangerate.js"></script>
+    <script type="text/javascript">
+        document.getElementById('menu').innerHTML = <?php echo json_encode($_SESSION["linkMenu"] ?? ''); ?>;
+        var formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 4)); ?>;
+    </script>
+</html>

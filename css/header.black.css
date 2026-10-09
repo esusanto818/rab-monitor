@@ -1,0 +1,182 @@
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1) !important;}
+#mainHeader { background: rgba(66, 0, 255, .3); }
+#mainHeaderText { color: #fff; }
+
+#menuForm a:hover {background-color: rgba(0, 0, 0, .4);}
+/*#editorForm {background: #fff;}*/
+/*input[type="checkbox"]+label:before{background-color: #ebe6de;}
+input[type="radio"]+label:before{background:none ;}
+input[type="radio"]:checked+label:before{background:none;}*/
+#editorForm {background: #ebe6de;}
+#editorFormHeader, #addFormHeader, #uploadFormHeader, #prnFormHeader {background: transparent;}
+#editorFormMain, #addFormMain, #uploadFormMain, #prnFormMain {background: transparent;}
+.x-form-text, textarea.x-form-field {background-color: transparent;}
+/* .x-combo-list-item { border-color: #f6f6f6; background: #f6f6f6; } */
+.x-grid3-gridDetail .x-grid3-hd-row td, .x-grid3-gridDetail .x-grid3-header, .x-grid3-gridDetail .x-grid3-header-inner {background-color: rgba(0, 0, 0, .1) !important; color: #21ff00;}
+
+.x-grid3-gridDetail2 .x-grid3-hd-row td, .x-grid3-gridDetail2 .x-grid3-header, .x-grid3-gridDetail2 .x-grid3-header-inner {background-color: rgba(0, 0, 0, .1) !important; color: #00ffff;}
+
+.x-grid3-gridDetail1 .x-grid3-hd-row td, .x-grid3-gridDetail1 .x-grid3-header, .x-grid3-gridDetail1 .x-grid3-header-inner {background-color: rgba(0, 0, 0, .1) !important; color: #ffff00;}
+
+.x-grid3-gridEditor .x-grid3-hd-row td, .x-grid3-gridEditor .x-grid3-header, .x-grid3-gridEditor .x-grid3-header-inner {background-color: #194a82 !important; color: #fff;}
+.x-grid3-gridEditor .x-grid3-hd-row td {border-left-color: transparent; border-right-color: transparent;}
+.x-grid3-gridEditor .x-grid3-row td { color: #000;}
+.x-grid3-gridEditor .x-grid3-row-alt {background-color:rgba(143, 164, 177, 0.1);}
+.x-grid3-gridEditor .x-panel-bbar .x-toolbar, .x-grid3-gridEditor .x-panel-tbar .x-toolbar {background-color: #194a82;}
+.x-grid3-gridEditor .x-toolbar div.xtb-text {background-color: #194a82;}
+.x-grid3-gridEditor .x-tbar-page-number {background-color: #194a82 !important;}
+
+.x-grid3-gridAddItem .x-grid3-hd-row td, .x-grid3-gridAddItem .x-grid3-header-offset, .x-grid3-gridAddItem .x-grid3-header, .x-grid3-gridAddItem .x-grid3-header-inner {
+  font-size: 13px !important;
+  font-weight: 300;
+  background-image: none important;
+  background-color: #602b5e !important;
+  color: #fff;
+}
+.x-grid3-hd-row td {border-left-color:rgba(0, 0, 0, .0); border-right-color: rgba(0, 0, 0, .0);}
+.x-grid3-gridAddItem .x-grid3-hd-row td {border: transparent;}
+.x-grid3-gridAddItem .x-grid3-row td { color: #000;}
+.x-grid3-gridAddItem .x-panel-bbar .x-toolbar, .x-grid3-gridAddItem .x-panel-tbar .x-toolbar {background-color: #602b5e;}
+.x-grid3-gridAddItem .x-toolbar div.xtb-text {background-color: #602b5e;}
+.x-grid3-gridAddItem .x-tbar-page-number {background-color: #602b5e !important;}
+.x-grid3-gridAddItem .x-grid3-col.x-grid3-cell {border-left: 1px solid transparent; border-right: 1px solid transparent; border-bottom: 1px solid transparent;}
+.x-grid3-gridAddItem .x-grid3-row-alt {background-color:rgba(143, 164, 177, 0.1);}
+
+.x-grid3-hd-row-user-2092ee .x-grid3-row td {color: #000;}
+.x-grid3-hd-row-user-48B66A .x-grid3-row td {color: #000;}
+.x-grid3-hd-row-user-FA9939 .x-grid3-row td {color: #000;}
+#divMainGrid {
+  /*background-color: rgba(255, 0, 255, .3);*/
+}
+#divDetailGrid {
+  /*width: 98%;
+  height: 48%;
+  position: relative;
+  margin: 10 auto;*/
+  /*background-color: rgba(0, 0, 255, .3);*/
+}
+::-webkit-scrollbar-thumb { background: rgb(0, 0, 0) !important;}
+#mainHeader { background: rgb(0, 0, 0); }
+#mainHeaderText { color: #fff; }
+
+#menuForm a:hover {background-color: rgba(0, 0, 0, .4);}
+/*#editorForm {background: #fff;}*/
+/*input[type="checkbox"]+label:before{background-color: #ebe6de;}
+input[type="radio"]+label:before{background:none ;}
+input[type="radio"]:checked+label:before{background:none;}*/
+#editorForm {background: #ebe6de;}
+#editorFormHeader, #addFormHeader, #uploadFormHeader, #prnFormHeader {background: transparent;}
+#editorFormMain, #addFormMain, #uploadFormMain, #prnFormMain {background: transparent;}
+.x-form-text, textarea.x-form-field {background-color: transparent;}
+/* .x-combo-list-item { border-color: #f6f6f6; background: #f6f6f6; } */
+.x-grid3-gridDetail .x-grid3-hd-row td, .x-grid3-gridDetail .x-grid3-header, .x-grid3-gridDetail .x-grid3-header-inner {background-color: rgba(0, 0, 0, .1) !important; color: #21ff00;}
+
+.x-grid3-gridDetail2 .x-grid3-hd-row td, .x-grid3-gridDetail2 .x-grid3-header, .x-grid3-gridDetail2 .x-grid3-header-inner {background-color: rgba(0, 0, 0, .1) !important; color: #00ffff;}
+
+.x-grid3-gridDetail1 .x-grid3-hd-row td, .x-grid3-gridDetail1 .x-grid3-header, .x-grid3-gridDetail1 .x-grid3-header-inner {background-color: rgba(0, 0, 0, .1) !important; color: #ffff00;}
+
+.x-grid3-gridEditor .x-grid3-hd-row td, .x-grid3-gridEditor .x-grid3-header, .x-grid3-gridEditor .x-grid3-header-inner {background-color: #194a82 !important; color: #fff;}
+.x-grid3-gridEditor .x-grid3-hd-row td {border-left-color: transparent; border-right-color: transparent;}
+.x-grid3-gridEditor .x-grid3-row td { color: #000;}
+.x-grid3-gridEditor .x-grid3-row-alt {background-color:rgba(143, 164, 177, 0.1);}
+.x-grid3-gridEditor .x-panel-bbar .x-toolbar, .x-grid3-gridEditor .x-panel-tbar .x-toolbar {background-color: #194a82;}
+.x-grid3-gridEditor .x-toolbar div.xtb-text {background-color: #194a82;}
+.x-grid3-gridEditor .x-tbar-page-number {background-color: #194a82 !important;}
+
+.x-grid3-gridAddItem .x-grid3-hd-row td, .x-grid3-gridAddItem .x-grid3-header-offset, .x-grid3-gridAddItem .x-grid3-header, .x-grid3-gridAddItem .x-grid3-header-inner {
+  font-size: 13px !important;
+  font-weight: 300;
+  background-image: none important;
+  background-color: #602b5e !important;
+  color: #fff;
+}
+.x-grid3-hd-row td {border-left-color:rgba(0, 0, 0, .0); border-right-color: rgba(0, 0, 0, .0);}
+.x-grid3-gridAddItem .x-grid3-hd-row td {border: transparent;}
+.x-grid3-gridAddItem .x-grid3-row td { color: #000;}
+.x-grid3-gridAddItem .x-panel-bbar .x-toolbar, .x-grid3-gridAddItem .x-panel-tbar .x-toolbar {background-color: #602b5e;}
+.x-grid3-gridAddItem .x-toolbar div.xtb-text {background-color: #602b5e;}
+.x-grid3-gridAddItem .x-tbar-page-number {background-color: #602b5e !important;}
+.x-grid3-gridAddItem .x-grid3-col.x-grid3-cell {border-left: 1px solid transparent; border-right: 1px solid transparent; border-bottom: 1px solid transparent;}
+.x-grid3-gridAddItem .x-grid3-row-alt {background-color:rgba(143, 164, 177, 0.1);}
+
+.x-grid3-hd-row-user-2092ee .x-grid3-row td {color: #000;}
+.x-grid3-hd-row-user-48B66A .x-grid3-row td {color: #000;}
+.x-grid3-hd-row-user-FA9939 .x-grid3-row td {color: #000;}
+#divMainGrid {
+  /*background-color: rgba(255, 0, 255, .3);*/
+}
+#divDetailGrid {
+  /*width: 98%;
+  height: 48%;
+  position: relative;
+  margin: 10 auto;*/
+  /*background-color: rgba(0, 0, 255, .3);*/
+}
+
+/* ============================================================
+   FIX: Tombol OK/Yes/No/Cancel pada Ext.Msg.alert / Ext.Msg.confirm
+   Sebelumnya tombol ini tidak ada override sama sekali, jadi masih
+   pakai warna default ExtJS (nyaris tak kelihatan di atas dark theme).
+   Class 'ext-mb-window' adalah class bawaan window MessageBox ExtJS 3.x.
+   ============================================================ */
+.ext-mb-window {
+  background: #1e222d !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+.ext-mb-window .x-window-header,
+.ext-mb-window .x-window-tl,
+.ext-mb-window .x-window-tc,
+.ext-mb-window .x-window-tr,
+.ext-mb-window .x-window-bl,
+.ext-mb-window .x-window-bc,
+.ext-mb-window .x-window-br,
+.ext-mb-window .x-window-ml,
+.ext-mb-window .x-window-mc,
+.ext-mb-window .x-window-mr {
+  background-color: #1e222d !important;
+  background-image: none !important;
+}
+.ext-mb-window .x-window-header .x-window-header-text {
+  color: #ffffff !important;
+}
+.ext-mb-window .ext-mb-text,
+.ext-mb-window .ext-mb-content,
+.ext-mb-window td {
+  color: #ffffff !important;
+}
+.ext-mb-window .x-toolbar,
+.ext-mb-window .x-panel-btns,
+.ext-mb-window .x-window-bwrap {
+  background: transparent !important;
+}
+
+/* Tombol itu sendiri (OK / Yes / No / Cancel / Submit) */
+.ext-mb-window .x-btn button,
+.x-window-dlg .x-btn button,
+.x-msgbox .x-btn button {
+  color: #ffffff !important;
+}
+.ext-mb-window .x-btn-mc,
+.x-window-dlg .x-btn-mc,
+.x-msgbox .x-btn-mc {
+  background-color: #2e7dd1 !important;
+  background-image: none !important;
+  border-radius: 4px;
+}
+.ext-mb-window .x-btn-mc em.x-btn-arrow,
+.ext-mb-window .x-btn-tl, .ext-mb-window .x-btn-tr,
+.ext-mb-window .x-btn-bl, .ext-mb-window .x-btn-br,
+.ext-mb-window .x-btn-ml, .ext-mb-window .x-btn-mr {
+  background: none !important;
+  background-image: none !important;
+}
+.ext-mb-window .x-btn-over .x-btn-mc,
+.x-window-dlg .x-btn-over .x-btn-mc {
+  background-color: #4695e6 !important;
+}
+.field-button .x-btn-mc {
+  padding: 8px 10px !important;
+}
+x-grid3 {
+    background-color: #1a3a52;
+}

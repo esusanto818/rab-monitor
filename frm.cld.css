@@ -1,0 +1,362 @@
+/******************************************************************************/
+/* FILE: css/frm.css                                                          */
+/* BUNDLE LENGKAP: TEMA DARK ELEGANT, FORM CONTROLS, & GRID HEADER TRASH ICON */
+/******************************************************************************/
+
+/* ==========================================================================
+   1. CONTAINER UTAMA MODAL / WINDOW (ELIMINASI PITA KREM & VOID GAP)
+   ========================================================================== */
+* {
+    box-sizing: border-box;
+}
+
+#editorWdw,
+#popWdw,
+#editorForm,
+#addForm,
+#editorFormMain,
+#editorWdw .x-window,
+#editorWdw .x-window-bwrap,
+#editorWdw .x-window-body,
+#editorWdw .x-window-mc, #editorWdw .x-window-ml, #editorWdw .x-window-mr,
+#editorWdw .x-window-bl, #editorWdw .x-window-bc, #editorWdw .x-window-br,
+#editorWdw .x-window-tl, #editorWdw .x-window-tr, #editorWdw .x-window-tc,
+#editorWdw .x-panel,
+#editorWdw .x-panel-bwrap,
+#editorWdw .x-panel-body,
+#editorWdw .x-panel-mc, #editorWdw .x-panel-ml, #editorWdw .x-panel-mr,
+#editorWdw .x-panel-bl, #editorWdw .x-panel-bc, #editorWdw .x-panel-br,
+#editorWdw .x-panel-tl, #editorWdw .x-panel-tr, #editorWdw .x-panel-tc {
+    background: #081420 !important;
+    background-color: #081420 !important;
+    background-image: none !important;
+    border-color: #1a3a52 !important;
+    color: #e2e8f0 !important;
+}
+
+/* Penetralan elemen internal dalam modal */
+#editorWdw div,
+#editorWdw table,
+#editorWdw tr,
+#editorWdw td,
+#editorForm div,
+#editorForm td {
+    background-color: transparent !important;
+    background-image: none !important;
+}
+
+/* Reseting height agar tidak ada void area/ruang kosong pekat */
+#editorWdw .x-window-body,
+#editorForm {
+    height: auto !important;
+    min-height: unset !important;
+}
+
+/* ==========================================================================
+   2. HEADER MODAL & JUDUL FORM BANNER
+   ========================================================================== */
+#editorWdw .x-window-header,
+#editorWdw .x-panel-header,
+#editorFormHeader,
+#editorFormHeaderText,
+.hdrForm h2,
+.hdrForm .title {
+    background: #081420 !important;
+    background-color: #081420 !important;
+    background-image: none !important;
+    border-bottom: 1px solid #1a3a52 !important;
+    color: #38bdf8 !important;              
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    font-style: italic !important;
+}
+
+/* Tombol Close 'X' Window Header */
+#editorWdw .x-tool-close {
+    background-color: transparent !important;
+    background-image: none !important;
+    color: #ef4444 !important;
+    opacity: 0.8;
+}
+
+#editorWdw .x-tool-close:hover {
+    opacity: 1;
+}
+
+/* ==========================================================================
+   3. LABEL & INPUT FORM (TEXTFIELD, NUMBERFIELD, TEXTAREA)
+   ========================================================================== */
+#editorWdw .x-form-item label,
+#editorWdw label,
+.hdrForm label {
+    color: #38bdf8 !important;              
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    background: transparent !important;
+}
+
+#editorWdw .x-form-text,
+#editorWdw .x-form-field,
+#editorWdw input.x-form-text {
+    background-color: #05101a !important;
+    background-image: none !important;
+    color: #ffffff !important;
+    border: 1px solid #1a3a52 !important;
+    border-radius: 4px !important;
+    height: 24px !important;
+    line-height: 22px !important;
+    padding: 0 8px !important;
+    box-sizing: border-box !important;
+}
+
+#editorWdw .x-form-text:focus,
+#editorWdw .x-form-field:focus {
+    border-color: #38bdf8 !important;
+    outline: none !important;
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.3) !important;
+}
+
+/* Input Readonly / Disabled */
+.x-form-readonly, 
+.x-item-disabled .x-form-field,
+.x-form-field[readonly] {
+    background-color: #04101c !important;
+    border-color: #0a2135 !important;
+    color: #64748b !important;
+    opacity: 0.8;
+    cursor: not-allowed !important;
+}
+
+/* ==========================================================================
+   4. TRIGGER DROPDOWN & KALENDER INPUT (AMAN & PRESISI)
+   ========================================================================== */
+.x-form-field-wrap {
+    position: relative !important;
+    vertical-align: middle !important;
+}
+
+#editorWdw .x-form-field-wrap .x-form-trigger {
+    background-color: #0b1726 !important;
+    border: 1px solid #1a3a52 !important;
+    border-left: none !important;
+    border-radius: 0 4px 4px 0 !important;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="%2338bdf8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>') !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+    cursor: pointer !important;
+}
+
+#editorWdw .x-form-field-wrap .x-form-date-trigger {
+    background-color: #0b1726 !important;
+    border: 1px solid #1a3a52 !important;
+    border-left: none !important;
+    border-radius: 0 4px 4px 0 !important;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="%2338bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>') !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+    cursor: pointer !important;
+}
+
+#editorWdw .x-form-field-wrap .x-form-trigger:hover,
+#editorWdw .x-form-field-wrap .x-form-date-trigger:hover {
+    opacity: 1 !important;
+    background-color: #132d4a !important;
+}
+
+/* ==========================================================================
+   5. POPUP DROPDOWN COMBO LIST & DATE PICKER (HOVER HIJAU/TEAL)
+   ========================================================================== */
+.x-combo-list,
+.x-combo-list-inner,
+.x-layer.x-combo-list {
+    background-color: #08121e !important;
+    border: 1px solid #1a3a52 !important;
+    border-radius: 4px !important;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.8) !important;
+}
+
+.x-combo-list-item {
+    background-color: #08121e !important;
+    color: #e2e8f0 !important;
+    border-bottom: 1px solid #0d2133 !important;
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+}
+
+/* Item Dropdown saat Hover / Terpilih (Hijau/Teal) */
+.x-combo-list-item:hover,
+.x-combo-list-item-hover,
+.x-combo-selected {
+    background-color: #10b981 !important; 
+    color: #ffffff !important;
+    font-weight: 600 !important;
+}
+
+.x-date-picker,
+.x-date-inner,
+.x-date-inner th,
+.x-date-inner td {
+    background-color: #08121e !important;
+    color: #e2e8f0 !important;
+    border-color: #1a3a52 !important;
+}
+
+.x-date-middle, 
+.x-date-left, 
+.x-date-right,
+.x-date-middle .x-btn-text,
+.x-date-inner th {
+    background: transparent !important;
+    color: #38bdf8 !important;
+    font-weight: bold !important;
+}
+
+/* Tanggal Terpilih & Hover (Hijau/Teal) */
+.x-date-inner .x-date-selected a,
+.x-date-inner .x-date-active a:hover {
+    background-color: #10b981 !important; 
+    color: #ffffff !important;
+    border-radius: 4px !important;
+}
+
+.x-date-bottom {
+    background-color: #08121e !important;
+    border-top: 1px solid #1a3a52 !important;
+}
+
+/* Tombol Today (Outline Hijau) */
+.x-date-bottom .x-btn button {
+    background: transparent !important;
+    color: #10b981 !important;
+    border: 1px solid #10b981 !important;
+    border-radius: 4px !important;
+    font-weight: bold !important;
+}
+
+.x-date-bottom .x-btn button:hover {
+    background-color: rgba(16, 185, 129, 0.1) !important;
+}
+
+/* ==========================================================================
+   6. GRID PANEL HEADER & TRASH ICON
+   ========================================================================== */
+#editorWdw .x-grid3-header,
+#editorWdw .x-grid3-hd-row td,
+#editorWdw .x-grid3-hd,
+#editorWdw .x-grid3-hd-inner,
+#editorWdw .x-grid3-scroll-spacer,
+#editorWdw .x-grid3-hd-spacer {
+    background-color: #081420 !important;
+    background-image: none !important;
+    border-color: #1a3a52 !important;
+}
+
+#editorWdw .x-grid3-hd-last .x-grid3-hd-inner,
+#editorWdw .hdr-trash-icon,
+#editorWdw .x-grid3-hd-action .x-grid3-hd-inner {
+    width: 100% !important;
+    min-height: 18px !important;
+    display: block !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3 6 5 6 21 6'%3E%3C/polyline%3E%3Cpath d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'%3E%3C/path%3E%3Cline x1='10' y1='11' x2='10' y2='17'%3E%3C/line%3E%3Cline x1='14' y1='11' x2='14' y2='17'%3E%3C/line%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    color: transparent !important; 
+}
+
+/* ==========================================================================
+   7. TOOLBAR / ACTION BUTTONS (SAVE & DISCARD - PILL SHAPE)
+   ========================================================================== */
+#editorWdw .x-panel-tbar .x-toolbar,
+#editorWdw .x-window-tbar .x-toolbar {
+    background: transparent !important;
+    border: none !important;
+    padding: 10px !important;
+}
+
+#editorWdw .x-toolbar table, 
+#editorWdw .x-panel-tbar table {
+    float: right !important; 
+    margin-right: 15px !important;
+}
+
+#editorWdw .x-toolbar .x-toolbar-cell {
+    padding-left: 12px !important;
+}
+
+.x-btn, .x-btn-tl, .x-btn-tr, .x-btn-tc, 
+.x-btn-ml, .x-btn-mr, .x-btn-mc, 
+.x-btn-bl, .x-btn-br, .x-btn-bc {
+    background: transparent !important;
+    border: none !important;
+}
+
+#editorWdw .x-btn button, 
+#editorWdw button, 
+#editorWdw input[type="button"], 
+#editorWdw input[type="submit"] {
+    font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    border-radius: 20px !important; 
+    padding: 6px 18px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    text-transform: uppercase !important;
+    background: transparent !important; 
+    box-shadow: none !important;
+}
+
+/* Tombol SAVE (Outline Merah Muda) */
+#editorWdw #saveEdit button,
+#editorWdw .btn-save button,
+#editorWdw button#saveEdit {
+    border: 1px solid #f43f5e !important;
+    color: #f43f5e !important;
+}
+
+#editorWdw #saveEdit button:hover,
+#editorWdw .btn-save button:hover,
+#editorWdw button#saveEdit:hover {
+    background-color: rgba(244, 63, 94, 0.1) !important;
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.3) !important;
+}
+
+/* Tombol DISCARD (Outline Hijau) */
+#editorWdw #discardEdit button,
+#editorWdw #popCancel button,
+#editorWdw .btn-cancel button,
+#editorWdw button#popCancel {
+    border: 1px solid #10b981 !important;
+    color: #10b981 !important;
+}
+
+#editorWdw #discardEdit button:hover,
+#editorWdw #popCancel button:hover,
+#editorWdw .btn-cancel button:hover,
+#editorWdw button#popCancel:hover {
+    background-color: rgba(16, 185, 129, 0.1) !important;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3) !important;
+}
+
+/* Tombol Tambah Material Khusus */
+#editorWdw .btn-add-material,
+#editorWdw button.add-btn {
+    background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%) !important;
+    border: 1px solid #38bdf8 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    border-radius: 4px !important;
+    padding: 4px 12px !important;
+    text-transform: none !important; 
+}
+
+/* Footer / Total Budget Bar */
+#editorWdw .x-panel-bbar,
+#editorWdw .x-panel-fbar,
+#editorWdw .total-budget-bar {
+    background-color: #081420 !important;
+    background-image: none !important;
+    border-top: 1px solid #1a3a52 !important;
+    color: #ffffff !important;
+    font-weight: bold !important;
+}
