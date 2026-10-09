@@ -1,15 +1,20 @@
 <?php
 /**
- * supplierreturnCRD.php — Retur Supplier untuk material cacat / rusak
+ * purchase.returnCRD.php — Retur Pembelian (Retur Supplier) untuk material cacat / rusak
  *
- * Syarat : material sudah di-RCV (ada stok di gudang proyek).
+ * [CHANGED] Entry retur kini BERBASIS DOKUMEN W/H RCV:
+ *   pilih satu RCV -> supplier, gudang, proyek (via GRN -> PO) dan PO terisi otomatis;
+ *   daftar item = item pada RCV tsb; qty retur dibatasi:
+ *      min( qty RCV - sudah diretur dari RCV ini,  stok gudang - klaim retur lain berstatus Diajukan )
+ *   Gudang TIDAK lagi difilter berdasarkan warehouses.project_id (gudang utama dipakai bersama).
+ *
  * Alur   : Diajukan --(Kirim)--> Dikirim --(Selesaikan)--> Diganti | Kredit
  *          Diajukan --(Batalkan)--> Dibatalkan ; Dikirim --(Batal Kirim)--> Diajukan
  * Kirim  : membuat dokumen ISSUE W/H (material_out_header.issue_type = 'SUPPLIER_RETURN'),
  *          stok keluar FIFO lewat stock_movements (reference_type 'MATERIAL_OUT', sama dengan Warehouse Issuing)
  *          sehingga tampil di Stock Card. Issue retur TIDAK menghitung kuota RAB +5%.
- * Action : list | detail | lookup_projects | lookup_warehouses | lookup_suppliers | lookup_pos |
- *          lookup_materials | save | send | unsend | resolve | cancel
+ * Action : list | detail | lookup_rcv | rcv_items | save | send | unsend | resolve | cancel
+ * Butuh  : sql/2026-10-09.issue_return_fix.sql + sql/2026-10-09b.return_from_rcv.sql
  */
 ob_start();
 ini_set('display_errors', '0');
@@ -17,7 +22,7 @@ require_once '../php-func/function.all.php';
 require_once '../php-class/crudClass.php';
 require_once '../php-func/function.stock.php';
 
-define('ISSUE_REF_TYPE', 'MATERIAL_OUT');        // harus sama dengan whissuingCRD.php
+define('ISSUE_REF_TYPE', 'MATERIAL_OUT');        // harus sama dengan warehouse.issuingCRD.php
 define('ISSUE_TYPE_RETURN', 'SUPPLIER_RETURN');
 
 $DEFECT_TYPES = array('Cacat Produksi', 'Rusak Saat Pengiriman', 'Tidak Sesuai Spesifikasi',
@@ -26,18 +31,15 @@ $action = WhReq('action', 'list');
 
 try {
     switch ($action) {
-        case 'list':              RtList(); break;
-        case 'detail':            RtDetail(); break;
-        case 'lookup_projects':   RtLookupProjects(); break;
-        case 'lookup_warehouses': RtLookupWarehouses(); break;
-        case 'lookup_suppliers':  RtLookupSuppliers(); break;
-        case 'lookup_pos':        RtLookupPos(); break;
-        case 'lookup_materials':  RtLookupMaterials(); break;
-        case 'save':              RtSave(); break;
-        case 'send':              RtSend(); break;
-        case 'unsend':            RtUnsend(); break;
-        case 'resolve':           RtResolve(); break;
-        case 'cancel':            RtCancel(); break;
+        case 'list':        RtList(); break;
+        case 'detail':      RtDetail(); break;
+        case 'lookup_rcv':  RtLookupRcv(); break;   // [CHANGED] pengganti lookup proyek/supplier/gudang/PO/material
+        case 'rcv_items':   RtRcvItems(); break;    // [CHANGED] item RCV + qty yang masih boleh diretur
+        case 'save':        RtSave(); break;
+        case 'send':        RtSend(); break;
+        case 'unsend':      RtUnsend(); break;
+        case 'resolve':     RtResolve(); break;
+        case 'cancel':      RtCancel(); break;
         default: throw new WhException('Action tidak dikenali.');
     }
 } catch (WhException $e) {
@@ -45,7 +47,7 @@ try {
     WhFail($e->getMessage());
 } catch (Exception $e) {
     @pg_query($conn, 'ROLLBACK');
-    WhLog('supplierreturnCRD: ' . $e->getMessage());
+    WhLog('purchase.returnCRD: ' . $e->getMessage());
     WhFail('Terjadi kesalahan pada server. Hubungi administrator.');
 }
 
@@ -59,6 +61,29 @@ function RtOpenClaim($whId, $materialId, $exclHdrId) {
     return round((float)$r['q'], 4);
 }
 
+// [CHANGED] Qty material yang sudah diretur dari RCV tertentu (retur Dibatalkan tidak dihitung)
+function RtReturnedFromRcv($rcvId, $materialId, $exclHdrId) {
+    $r = WhRow("SELECT COALESCE(SUM(d.qty_claim),0) AS q
+                FROM supplier_return_dtl d JOIN supplier_return_hdr h ON h.id=d.return_hdr_id
+                WHERE h.wh_receiving_hdr_id=$1 AND d.material_id=$2 AND h.status<>'Dibatalkan' AND h.id<>$3",
+               array((int)$rcvId, (int)$materialId, (int)$exclHdrId));
+    return round((float)$r['q'], 4);
+}
+
+// [CHANGED] Header RCV posted + turunan proyek / PO / supplier (via GRN -> PO)
+function RtRcvHeader($rcvId) {
+    return WhRow("SELECT r.id, r.ref_no, r.received_date, r.warehouse_id, w.name AS warehouse_name,
+                         g.ref_no AS grn_no, po.id AS po_id, po.po_number, po.project_id, p.name AS project_name,
+                         COALESCE(g.supplier_id, po.supplier_id) AS supplier_id, s.name AS supplier_name
+                  FROM wh_receiving_hdr r
+                  JOIN grn_hdr g ON g.id=r.grn_hdr_id
+                  JOIN purchase_orders po ON po.id=g.po_id
+                  JOIN projects p ON p.id=po.project_id
+                  JOIN warehouses w ON w.id=r.warehouse_id
+                  LEFT JOIN m_suppliers s ON s.id=COALESCE(g.supplier_id, po.supplier_id)
+                  WHERE r.id=$1 AND r.status='posted'", array((int)$rcvId));
+}
+
 function RtList() {
     list($start, $limit) = WhPage();
     $q = WhReq('query');
@@ -66,15 +91,17 @@ function RtList() {
     $where = '1=1';
     if ($q !== '') {
         $params[] = '%' . $q . '%';
-        $where .= ' AND (h.ref_no ILIKE $1 OR p.name ILIKE $1 OR s.name ILIKE $1 OR h.supplier_do_no ILIKE $1)';
+        $where .= ' AND (h.ref_no ILIKE $1 OR p.name ILIKE $1 OR s.name ILIKE $1 OR h.supplier_do_no ILIKE $1 OR rc.ref_no ILIKE $1)';
     }
     $c = WhRow("SELECT COUNT(*) AS n FROM supplier_return_hdr h
-                JOIN projects p ON p.id=h.project_id JOIN m_suppliers s ON s.id=h.supplier_id WHERE $where", $params);
+                JOIN projects p ON p.id=h.project_id JOIN m_suppliers s ON s.id=h.supplier_id
+                LEFT JOIN wh_receiving_hdr rc ON rc.id=h.wh_receiving_hdr_id WHERE $where", $params);
     $params[] = $limit;  $pl = '$' . count($params);
     $params[] = $start;  $ps = '$' . count($params);
     $rows = WhRows("SELECT h.id, h.ref_no, h.return_date, h.project_id, p.name AS project_name,
                            h.warehouse_id, w.name AS warehouse_name, h.supplier_id, s.name AS supplier_name,
                            h.po_id, po.po_number, h.supplier_do_no, h.status, h.remark,
+                           h.wh_receiving_hdr_id, rc.ref_no AS rcv_ref_no,
                            h.material_out_id, mo.ref_no AS issue_ref_no, h.sent_date, h.carrier,
                            h.resolution_type, h.resolution_date, h.credit_note_no, h.credit_amount, h.resolution_note,
                            COALESCE(t.line_count,0) AS line_count, COALESCE(t.total_qty,0) AS total_qty,
@@ -84,6 +111,7 @@ function RtList() {
                     JOIN warehouses w ON w.id=h.warehouse_id
                     JOIN m_suppliers s ON s.id=h.supplier_id
                     LEFT JOIN purchase_orders po ON po.id=h.po_id
+                    LEFT JOIN wh_receiving_hdr rc ON rc.id=h.wh_receiving_hdr_id
                     LEFT JOIN material_out_header mo ON mo.id=h.material_out_id
                     LEFT JOIN (SELECT return_hdr_id, COUNT(*) AS line_count, SUM(qty_claim) AS total_qty,
                                       SUM(qty_claim*unit_cost) AS total_amount
@@ -104,48 +132,51 @@ function RtDetail() {
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
 }
 
-function RtLookupProjects() {
-    $rows = WhRows("SELECT id, name FROM projects ORDER BY name LIMIT 300");
-    WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
-}
-function RtLookupSuppliers() {
-    $rows = WhRows("SELECT id, name FROM m_suppliers WHERE active IS NOT FALSE ORDER BY name LIMIT 500");
-    WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
-}
-function RtLookupWarehouses() {
-    $rows = WhRows("SELECT id, code, name FROM warehouses WHERE active=true AND project_id=$1 ORDER BY name",
-                   array((int)WhReq('project_id')));
-    WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
-}
-// PO referensi (opsional) untuk proyek + supplier terpilih; baris pertama = tanpa PO
-function RtLookupPos() {
-    $rows = WhRows("SELECT id, po_number, po_date FROM purchase_orders
-                    WHERE project_id=$1 AND supplier_id=$2 AND status <> 'Dibatalkan'
-                    ORDER BY po_date DESC, id DESC LIMIT 200",
-                   array((int)WhReq('project_id'), (int)WhReq('supplier_id')));
-    array_unshift($rows, array('id' => 0, 'po_number' => '(tanpa referensi PO)', 'po_date' => ''));
+// [CHANGED] Daftar dokumen RCV posted (dengan proyek, supplier, gudang, PO) untuk dipilih di editor retur
+function RtLookupRcv() {
+    $q = WhReq('query');
+    $rows = WhRows("SELECT r.id, r.ref_no, r.received_date, r.warehouse_id, w.name AS warehouse_name,
+                           g.ref_no AS grn_no, po.id AS po_id, po.po_number, po.project_id, p.name AS project_name,
+                           COALESCE(g.supplier_id, po.supplier_id) AS supplier_id, s.name AS supplier_name,
+                           (r.ref_no || ' | ' || p.name || ' | ' || COALESCE(s.name,'-') || ' | ' || r.received_date) AS label
+                    FROM wh_receiving_hdr r
+                    JOIN grn_hdr g ON g.id=r.grn_hdr_id
+                    JOIN purchase_orders po ON po.id=g.po_id
+                    JOIN projects p ON p.id=po.project_id
+                    JOIN warehouses w ON w.id=r.warehouse_id
+                    LEFT JOIN m_suppliers s ON s.id=COALESCE(g.supplier_id, po.supplier_id)
+                    WHERE r.status='posted'
+                      AND (r.ref_no ILIKE $1 OR g.ref_no ILIKE $1 OR po.po_number ILIKE $1 OR p.name ILIKE $1 OR s.name ILIKE $1)
+                    ORDER BY r.received_date DESC, r.id DESC LIMIT 100", array('%' . $q . '%'));
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
 }
 
-// Material yang sudah RCV (stok > 0) di gudang; bila ada PO -> hanya material pada PO tsb
-function RtLookupMaterials() {
-    $wid  = (int)WhReq('warehouse_id');
-    $poId = (int)WhReq('po_id');
-    $excl = (int)WhReq('exclude_id');
-    $q    = WhReq('query');
-    $params = array($wid, '%' . $q . '%');
-    $poF = '';
-    if ($poId > 0) { $params[] = $poId; $poF = ' AND EXISTS (SELECT 1 FROM po_items pi WHERE pi.po_id=$3 AND pi.material_id=m.id)'; }
-    $rows = WhRows("SELECT m.id AS material_id, m.material_code, m.material_name, m.unit, oh.onhand
-                    FROM materials m
-                    JOIN (SELECT item_id, SUM(CASE WHEN movement_type='IN' THEN qty ELSE -qty END) AS onhand
-                          FROM stock_movements WHERE warehouse_id=$1 GROUP BY item_id) oh ON oh.item_id=m.id
-                    WHERE oh.onhand > 0 AND (m.material_name ILIKE $2 OR m.material_code ILIKE $2) $poF
-                    ORDER BY m.material_name LIMIT 50", $params);
+// [CHANGED] Item pada satu RCV + qty yang masih boleh diretur (exclude_id = retur yang sedang diedit)
+function RtRcvItems() {
+    $rcvId = (int)WhReq('rcv_id');
+    $excl  = (int)WhReq('exclude_id');
+    if ($rcvId < 1) { throw new WhException('Dokumen RCV tidak valid.'); }
+    $rcv = RtRcvHeader($rcvId);
+    if (!$rcv) { throw new WhException('Dokumen RCV tidak ditemukan / belum posted.'); }
+    $whId = (int)$rcv['warehouse_id'];
+    $rows = WhRows("SELECT d.item_id AS material_id, m.material_code, m.material_name, m.unit,
+                           SUM(d.qty_received) AS qty_rcv
+                    FROM wh_receiving_dtl d JOIN materials m ON m.id=d.item_id
+                    WHERE d.wh_receiving_hdr_id=$1
+                    GROUP BY d.item_id, m.material_code, m.material_name, m.unit
+                    ORDER BY m.material_name", array($rcvId));
+    global $DEFECT_TYPES;
     foreach ($rows as &$r) {
-        $open = RtOpenClaim($wid, $r['material_id'], $excl);
-        $r['open_claim'] = $open;
-        $r['available'] = max(0, round((float)$r['onhand'] - $open, 4));
+        $mid = (int)$r['material_id'];
+        $ret = RtReturnedFromRcv($rcvId, $mid, $excl);
+        $stk = round(WhOnHand($mid, $whId) - RtOpenClaim($whId, $mid, $excl), 4);
+        $r['qty_rcv']      = round((float)$r['qty_rcv'], 4);
+        $r['qty_returned'] = $ret;
+        $r['available']    = max(0, min(round($r['qty_rcv'] - $ret, 4), $stk));
+        $r['qty_claim']    = 0;                              // diisi user
+        $r['defect_type']  = $DEFECT_TYPES[0];
+        $r['defect_note']  = '';
+        $r['evidence_ref'] = '';
     }
     unset($r);
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
@@ -154,33 +185,24 @@ function RtLookupMaterials() {
 function RtSave() {
     global $DEFECT_TYPES;
     WhRequirePost();
-    $id        = (int)WhPost('id');
-    $projectId = (int)WhPost('project_id');
-    $whId      = (int)WhPost('warehouse_id');
-    $supId     = (int)WhPost('supplier_id');
-    $poId      = (int)WhPost('po_id');
-    $date      = WhDate(WhPost('return_date'), 'Tanggal retur');
-    $doNo      = WhPost('supplier_do_no');
-    $remark    = WhPost('remark');
-    $details   = WhDetails();
-    $userId    = WhUserId();
+    $id      = (int)WhPost('id');
+    $rcvId   = (int)WhPost('rcv_id');                         // [CHANGED] dasar retur = dokumen RCV
+    $date    = WhDate(WhPost('return_date'), 'Tanggal retur');
+    $doNo    = WhPost('supplier_do_no');
+    $remark  = WhPost('remark');
+    $details = WhDetails();
+    $userId  = WhUserId();
 
-    if ($projectId < 1) { throw new WhException('Proyek wajib dipilih.'); }
-    if ($whId < 1)      { throw new WhException('Gudang wajib dipilih.'); }
-    if ($supId < 1)     { throw new WhException('Supplier wajib dipilih.'); }
-    $wh = WhRow('SELECT project_id, active FROM warehouses WHERE id=$1', array($whId));
-    if (!$wh || !WhBool($wh['active']))        { throw new WhException('Gudang tidak ditemukan / tidak aktif.'); }
-    if ((int)$wh['project_id'] !== $projectId) { throw new WhException('Gudang tidak terdaftar untuk proyek ini.'); }
-    if (!WhRow('SELECT 1 FROM m_suppliers WHERE id=$1', array($supId))) { throw new WhException('Supplier tidak ditemukan.'); }
-    if ($poId > 0) {
-        $po = WhRow('SELECT project_id, supplier_id FROM purchase_orders WHERE id=$1', array($poId));
-        if (!$po) { throw new WhException('PO referensi tidak ditemukan.'); }
-        if ((int)$po['project_id'] !== $projectId || (int)$po['supplier_id'] !== $supId) {
-            throw new WhException('PO referensi tidak sesuai dengan proyek / supplier.');
-        }
-    }
+    if ($rcvId < 1) { throw new WhException('Dokumen RCV wajib dipilih.'); }
+    $rcv = RtRcvHeader($rcvId);
+    if (!$rcv) { throw new WhException('Dokumen RCV tidak ditemukan / belum posted.'); }
+    $projectId = (int)$rcv['project_id'];                     // diturunkan dari RCV -> GRN -> PO
+    $whId      = (int)$rcv['warehouse_id'];
+    $supId     = (int)$rcv['supplier_id'];
+    $poId      = (int)$rcv['po_id'];
+    if ($supId < 1) { throw new WhException('Supplier pada GRN / PO untuk RCV ini belum terisi.'); }
 
-    // Validasi baris; total klaim per material dibatasi stok - klaim terbuka lain
+    // Validasi baris; total klaim per material dibatasi qty RCV dan stok gudang
     $lines = array(); $sumQty = array();
     foreach ($details as $d) {
         $mid  = isset($d['material_id']) ? (int)$d['material_id'] : 0;
@@ -194,6 +216,7 @@ function RtSave() {
                          'note' => isset($d['defect_note']) ? trim($d['defect_note']) : '',
                          'evid' => isset($d['evidence_ref']) ? trim($d['evidence_ref']) : '');
     }
+    if (!count($lines)) { throw new WhException('Isi qty retur minimal untuk satu material.'); }
 
     WhQ('BEGIN');
     if ($id > 0) {
@@ -206,11 +229,18 @@ function RtSave() {
         WhLock($mid, $whId);
         $m = WhRow('SELECT material_name FROM materials WHERE id=$1', array($mid));
         if (!$m) { throw new WhException('Material ID ' . $mid . ' tidak ditemukan.'); }
-        if ($poId > 0 && !WhRow('SELECT 1 FROM po_items WHERE po_id=$1 AND material_id=$2', array($poId, $mid))) {
-            throw new WhException($m['material_name'] . ' tidak ada pada PO referensi.');
+        // [CHANGED] batas 1: qty pada RCV - sudah diretur dari RCV ini
+        $rv = WhRow('SELECT COALESCE(SUM(qty_received),0) AS q FROM wh_receiving_dtl WHERE wh_receiving_hdr_id=$1 AND item_id=$2',
+                    array($rcvId, $mid));
+        if ((float)$rv['q'] <= 0) { throw new WhException($m['material_name'] . ' tidak ada pada dokumen RCV ' . $rcv['ref_no'] . '.'); }
+        $left = round((float)$rv['q'] - RtReturnedFromRcv($rcvId, $mid, $id), 4);
+        if ($tot > $left + 0.00005) {
+            throw new WhException('Qty retur ' . $m['material_name'] . ' (' . WhFmt($tot) . ') melebihi sisa qty RCV yang boleh diretur (' .
+                WhFmt(max(0, $left)) . ').');
         }
+        // batas 2: stok gudang - klaim retur lain yang masih Diajukan
         $onhand = WhOnHand($mid, $whId);
-        if ($onhand <= 0) { throw new WhException($m['material_name'] . ' belum di-RCV / stok di gudang kosong.'); }
+        if ($onhand <= 0) { throw new WhException($m['material_name'] . ' stok di gudang kosong.'); }
         $avail = round($onhand - RtOpenClaim($whId, $mid, $id), 4);
         if ($tot > $avail + 0.00005) {
             throw new WhException('Qty retur ' . $m['material_name'] . ' (' . WhFmt($tot) . ') melebihi stok tersedia (' .
@@ -219,15 +249,16 @@ function RtSave() {
     }
     if ($id > 0) {
         WhQ("UPDATE supplier_return_hdr SET return_date=$2, project_id=$3, warehouse_id=$4, supplier_id=$5, po_id=$6,
-                    supplier_do_no=$7, remark=$8, updated_at=now() WHERE id=$1",
-            array($id, $date, $projectId, $whId, $supId, $poId > 0 ? $poId : null, $doNo, $remark));
+                    supplier_do_no=$7, remark=$8, wh_receiving_hdr_id=$9, updated_at=now() WHERE id=$1",
+            array($id, $date, $projectId, $whId, $supId, $poId > 0 ? $poId : null, $doNo, $remark, $rcvId));
         WhQ('DELETE FROM supplier_return_dtl WHERE return_hdr_id=$1', array($id));
     } else {
         $refNo = CreateRefNo('supplier_return_hdr', 'ref_no', 'RTN');
         $h = WhRow("INSERT INTO supplier_return_hdr
-                        (ref_no, return_date, project_id, warehouse_id, supplier_id, po_id, supplier_do_no, status, remark, created_by)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,'Diajukan',$8,$9) RETURNING id",
-                   array($refNo, $date, $projectId, $whId, $supId, $poId > 0 ? $poId : null, $doNo, $remark, $userId));
+                        (ref_no, return_date, project_id, warehouse_id, supplier_id, po_id, supplier_do_no, status, remark,
+                         created_by, wh_receiving_hdr_id)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,'Diajukan',$8,$9,$10) RETURNING id",
+                   array($refNo, $date, $projectId, $whId, $supId, $poId > 0 ? $poId : null, $doNo, $remark, $userId, $rcvId));
         $id = (int)$h['id'];
     }
     foreach ($lines as $ln) {
