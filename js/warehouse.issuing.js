@@ -13,6 +13,17 @@
 */
 Ext.onReady(function () {
     Ext.QuickTips.init();
+
+    // [CHANGED] header kolom grid editor boleh multi-line (judul panjang membungkus, tidak terpotong "...")
+    (function () {
+        if (document.getElementById('gridEditorHdrCss')) return;
+        var st = document.createElement('style');
+        st.id = 'gridEditorHdrCss';
+        st.type = 'text/css';
+        st.innerHTML = '.x-grid3-gridEditor .x-grid3-hd-inner{white-space:normal !important;text-overflow:clip !important;line-height:13px;padding-top:3px;padding-bottom:3px;}' +
+                       '.x-grid3-gridEditor .x-grid3-hd-row td{vertical-align:middle;}';
+        document.getElementsByTagName('head')[0].appendChild(st);
+    })();
     document.getElementById("mainHeaderText").innerHTML = "Warehouse <em>Issuing</em>";
 
     var CRD = '../php-crud/warehouse.issuingCRD.php';   // [CHANGED] relatif dari /proyek/views/

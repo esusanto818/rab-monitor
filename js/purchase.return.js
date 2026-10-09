@@ -14,6 +14,17 @@
 */
 Ext.onReady(function () {
     Ext.QuickTips.init();
+
+    // [CHANGED] header kolom grid editor boleh multi-line (judul panjang membungkus, tidak terpotong "...")
+    (function () {
+        if (document.getElementById('gridEditorHdrCss')) return;
+        var st = document.createElement('style');
+        st.id = 'gridEditorHdrCss';
+        st.type = 'text/css';
+        st.innerHTML = '.x-grid3-gridEditor .x-grid3-hd-inner{white-space:normal !important;text-overflow:clip !important;line-height:13px;padding-top:3px;padding-bottom:3px;}' +
+                       '.x-grid3-gridEditor .x-grid3-hd-row td{vertical-align:middle;}';
+        document.getElementsByTagName('head')[0].appendChild(st);
+    })();
     document.getElementById("mainHeaderText").innerHTML = "Retur <em>Pembelian</em>";
 
     var CRD = '../php-crud/purchase.returnCRD.php';     // [CHANGED] relatif dari /proyek/views/
@@ -92,6 +103,72 @@ Ext.onReady(function () {
         });
     }
 
+
+    // [CHANGED] bukti retur: link/foto/PDF. Hanya http(s) atau path lokal yang dijadikan link (cegah javascript: URL)
+    function evidenceLink(v) {
+        if (!v) return '';
+        if (!/^(https?:\/\/|\/)/i.test(v)) return enc(v);
+        var label = /\.(jpe?g|png|gif|webp)(\?.*)?$/i.test(v) ? 'Foto' : (/\.pdf(\?.*)?$/i.test(v) ? 'PDF' : 'Link');
+        return '<a href="' + enc(v) + '" target="_blank" onclick="event.stopPropagation();" style="color:#2bc1e2;">' + label + '</a>';
+    }
+    function evidenceRenderer(v) {
+        if (!v) return '<span style="color:#668894;cursor:pointer;">+ Foto / Link</span>';
+        return evidenceLink(v) + ' <span style="color:#668894;cursor:pointer;" title="Ubah bukti">&#9998;</span>';
+    }
+
+    // Window isi bukti: tempel link ATAU unggah foto/PDF (maks 5 MB) -> URL tersimpan di kolom bukti baris tsb
+    function openEvidence(rec) {
+        var fUrl = new Ext.form.TextField({ fieldLabel: 'Link', anchor: '98%', value: rec.get('evidence_ref') || '',
+            emptyText: 'Tempel link foto / dokumen (https://...) atau unggah file' });
+        var info = new Ext.form.DisplayField({ hideLabel: true, value: '' });
+        var fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*,.pdf';
+        fileInput.style.display = 'none';
+        document.body.appendChild(fileInput);
+        fileInput.onchange = function () {
+            var f = fileInput.files && fileInput.files[0];
+            if (!f) return;
+            if (f.size > 5 * 1024 * 1024) { showErr('Ukuran file maksimal 5 MB.'); fileInput.value = ''; return; }
+            var fd = new FormData();
+            fd.append('action', 'upload_evidence');
+            fd.append('file', f);
+            info.setValue('Mengunggah ' + enc(f.name) + '...');
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', CRD);
+            xhr.onload = function () {
+                var o;
+                try { o = Ext.decode(xhr.responseText); } catch (e) { info.setValue(''); showErr('Respon server tidak valid (cek error_log PHP).'); return; }
+                if (!o.success) { info.setValue(''); showErr(o.message || 'Unggah gagal.'); return; }
+                fUrl.setValue(o.url);
+                info.setValue('<span style="color:#2e9e4f;">Terunggah: ' + enc(o.name) + '</span>');
+            };
+            xhr.onerror = function () { info.setValue(''); showErr('Koneksi ke server gagal saat mengunggah.'); };
+            xhr.send(fd);
+        };
+        var win = new Ext.Window({
+            title: 'Bukti Retur - ' + rec.get('material_name'), width: 520, height: 210, modal: true, layout: 'fit',
+            items: new Ext.form.FormPanel({
+                border: false, labelWidth: 50, bodyStyle: 'padding:12px;',
+                items: [fUrl,
+                        { xtype: 'button', text: 'Pilih Foto / PDF dari komputer...', handler: function () { fileInput.click(); } },
+                        { xtype: 'spacer', height: 8 }, info]
+            }),
+            buttons: [
+                { text: 'OK', handler: function () {
+                    var v = (fUrl.getValue() || '').trim();
+                    if (v && !/^(https?:\/\/|\/)/i.test(v)) { showErr('Link harus diawali http:// atau https://'); return; }
+                    rec.set('evidence_ref', v);
+                    win.close();
+                } },
+                { text: 'Hapus Bukti', handler: function () { rec.set('evidence_ref', ''); win.close(); } },
+                { text: 'Batal', handler: function () { win.close(); } }
+            ],
+            listeners: { close: function () { if (fileInput.parentNode) fileInput.parentNode.removeChild(fileInput); } }
+        });
+        win.show();
+    }
+
     function needAccess(level, msg) {
         if (getFormAccess() < level) { Ext.Msg.alert('Akses Ditolak', msg); return false; }
         return true;
@@ -156,7 +233,7 @@ Ext.onReady(function () {
                     '<td align="right" class="subtotal-val">' + fmtAmt(amt) + '</td>' +
                     '<td align="left">' + enc(i.defect_type) + '</td>' +
                     '<td align="left">' + enc(i.defect_note || '') + '</td>' +
-                    '<td align="left">' + enc(i.evidence_ref || '') + '</td></tr>';
+                    '<td align="left">' + evidenceLink(i.evidence_ref) + '</td></tr>';
         });
         html += '<tr class="data-row"><td colspan="3" align="right"><b>Total</b></td>' +
                 '<td align="right" class="subtotal-val"><b>' + fmtAmt(grand) + '</b></td><td colspan="3"></td></tr>';
@@ -361,8 +438,8 @@ Ext.onReady(function () {
             { header: 'Material', dataIndex: 'material_name', width: 170 },
             { header: 'Sat', dataIndex: 'unit', width: 45, align: 'center' },
             { header: 'Qty RCV', dataIndex: 'qty_rcv', width: 80, align: 'right', renderer: function (v) { return fmtQty(v); } },
-            { header: 'Sudah Diretur', dataIndex: 'qty_returned', width: 85, align: 'right', renderer: function (v) { return fmtQty(v); } },
-            { header: 'Boleh Diretur', dataIndex: 'available', width: 85, align: 'right', renderer: function (v) { return fmtQty(v); } },
+            { header: 'Sudah<br>Diretur', dataIndex: 'qty_returned', width: 85, align: 'right', renderer: function (v) { return fmtQty(v); } },
+            { header: 'Boleh<br>Diretur', dataIndex: 'available', width: 85, align: 'right', renderer: function (v) { return fmtQty(v); } },
             { header: 'Qty Retur', dataIndex: 'qty_claim', width: 85, align: 'right',
               editor: new myNumberField({ decimalPrecision: 4 }),
               renderer: function (v) { return '<b>' + fmtQty(v) + '</b>'; } },
@@ -370,13 +447,19 @@ Ext.onReady(function () {
               editor: new myComboField({ store: defectDs, displayField: 'v', valueField: 'v', mode: 'local',
                                          triggerAction: 'all', editable: false, forceSelection: true }) },
             { header: 'Keterangan', dataIndex: 'defect_note', width: 160, editor: new myTextField(), renderer: function (v) { return enc(v); } },
-            { header: 'Bukti (no. foto/link)', dataIndex: 'evidence_ref', width: 120, editor: new myTextField(), renderer: function (v) { return enc(v); } }
+            { id: 'rtEvidenceCol', header: 'Bukti<br>Foto / Link', dataIndex: 'evidence_ref', width: 120, renderer: evidenceRenderer },      // [CHANGED] klik sel -> window link / unggah foto
         ],
         listeners: {
             validateedit: function (e) {
                 if (e.field === 'qty_claim' && parseFloat(e.value) > parseFloat(e.record.get('available')) + EPS) {
                     showErr('Qty melebihi qty yang boleh diretur (' + fmtQty(e.record.get('available')) + ').');
                     e.cancel = true;
+                }
+            },
+            cellclick: function (grid, rowIndex, columnIndex, e) {
+                if (grid.getColumnModel().getColumnId(columnIndex) === 'rtEvidenceCol' && !(e && e.getTarget('a'))) {
+                    var r = grid.getStore().getAt(rowIndex);
+                    if (r) openEvidence(r);
                 }
             }
         }

@@ -13,7 +13,7 @@
  * Kirim  : membuat dokumen ISSUE W/H (material_out_header.issue_type = 'SUPPLIER_RETURN'),
  *          stok keluar FIFO lewat stock_movements (reference_type 'MATERIAL_OUT', sama dengan Warehouse Issuing)
  *          sehingga tampil di Stock Card. Issue retur TIDAK menghitung kuota RAB +5%.
- * Action : list | detail | lookup_rcv | rcv_items | save | send | unsend | resolve | cancel
+ * Action : list | detail | lookup_rcv | rcv_items | save | send | unsend | resolve | cancel | upload_evidence
  * Butuh  : sql/2026-10-09.issue_return_fix.sql + sql/2026-10-09b.return_from_rcv.sql
  */
 ob_start();
@@ -40,6 +40,7 @@ try {
         case 'unsend':      RtUnsend(); break;
         case 'resolve':     RtResolve(); break;
         case 'cancel':      RtCancel(); break;
+        case 'upload_evidence': RtUploadEvidence(); break;   // [CHANGED] unggah foto / PDF bukti cacat
         default: throw new WhException('Action tidak dikenali.');
     }
 } catch (WhException $e) {
@@ -377,4 +378,39 @@ function RtCancel() {
     WhQ("UPDATE supplier_return_hdr SET status='Dibatalkan', updated_at=now() WHERE id=$1", array($id));
     WhQ('COMMIT');
     WhOk('Retur dibatalkan.');
+}
+
+// [CHANGED] Unggah bukti cacat (foto / PDF, maks 5 MB) -> disimpan di /proyek/uploads/return/, kembalikan URL
+function RtUploadEvidence() {
+    WhRequirePost();
+    WhUserId();                                              // pastikan sesi valid
+    if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+        $code = isset($_FILES['file']['error']) ? (int)$_FILES['file']['error'] : -1;
+        throw new WhException('File gagal diunggah (kode ' . $code . '). Cek batas upload_max_filesize / post_max_size di php.ini.');
+    }
+    $f = $_FILES['file'];
+    if ($f['size'] > 5 * 1024 * 1024) { throw new WhException('Ukuran file maksimal 5 MB.'); }
+    $allowed = array('jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png',
+                     'webp' => 'image/webp', 'gif' => 'image/gif', 'pdf' => 'application/pdf');
+    $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+    if (!isset($allowed[$ext])) { throw new WhException('Tipe file tidak diizinkan. Gunakan JPG, PNG, WEBP, GIF atau PDF.'); }
+    if (function_exists('finfo_open')) {                     // cek isi file, bukan hanya ekstensi
+        $fi = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_file($fi, $f['tmp_name']);
+        finfo_close($fi);
+        if ($mime !== $allowed[$ext]) { throw new WhException('Isi file tidak sesuai dengan ekstensinya.'); }
+    }
+    $dir = dirname(__DIR__) . '/uploads/return';
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true)) {
+        throw new WhException('Folder uploads/return tidak bisa dibuat. Buat manual dan beri izin tulis untuk user web server.');
+    }
+    $ht = $dir . '/.htaccess';                               // larang eksekusi script di folder upload
+    if (!file_exists($ht)) {
+        @file_put_contents($ht, "<FilesMatch \"\\.(php|phtml|phar|pl|cgi)$\">\n    Require all denied\n</FilesMatch>\n");
+    }
+    $name = 'rtn_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) {
+        throw new WhException('Gagal menyimpan file. Cek izin tulis folder uploads/return.');
+    }
+    WhJson(array('success' => true, 'url' => '/proyek/uploads/return/' . $name, 'name' => $name));
 }
