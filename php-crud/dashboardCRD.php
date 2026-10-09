@@ -35,6 +35,8 @@ const SRC_FIN_INCOME   = true;  // financial_incomes
 const SRC_PRJ_PAYMENT  = true;  // project_payment_items (pembayaran termin klien)
 const SRC_FIN_EXPENSE  = true;  // financial_expenses
 const SRC_MATERIAL_OUT = true;  // material_out_items x unit_cost (biaya material ke proyek)
+const SRC_MATERIAL_IN  = false; // [BARU] material_receipt_items x unit_cost (pembelian diterima). Aktifkan bila ingin
+                                //        pengeluaran dihitung saat barang MASUK; matikan SRC_MATERIAL_OUT agar tidak ganda.
 
 $db     = new crud();
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
@@ -96,58 +98,173 @@ switch ($action) {
         }
         break;
 
-    // 4. PERFORMA KEUANGAN (PENDAPATAN VS PENGELUARAN PER BULAN)
+    // 4a. [BARU] FINANCIAL AGING (UMUR PIUTANG & HUTANG)
+    //     AR = sisa tagihan termin klien   (project_invoices.amount - terbayar)
+    //     AP = sisa invoice supplier       (purchase_invoice_hdr.total_amount - paid_amount)
+    //     Umur dihitung dari tanggal invoice (tabel belum punya kolom jatuh tempo).
+    //     Filter proyek pada AP dilakukan proporsional lewat purchase_invoice_dtl -> grn_hdr -> purchase_orders.
+    case 'read_financial_aging':
+        $projectId = (int)($_GET['project_id'] ?? 0);
+
+        // Bucket umur: <=30, 31-60, 61-90, >90 hari
+        $bucketSql = "
+            SELECT COALESCE(SUM(CASE WHEN age <= 30 THEN os END), 0)               AS age_30,
+                   COALESCE(SUM(CASE WHEN age BETWEEN 31 AND 60 THEN os END), 0)   AS age_60,
+                   COALESCE(SUM(CASE WHEN age BETWEEN 61 AND 90 THEN os END), 0)   AS age_90,
+                   COALESCE(SUM(CASE WHEN age > 90 THEN os END), 0)                AS age_over_90,
+                   COALESCE(SUM(os), 0)                                            AS total,
+                   COUNT(*)                                                        AS cnt
+            FROM (%s) t";
+
+        // AR: sisa = amount - GREATEST(paid_amount, total alokasi pembayaran) -> aman bila paid_amount belum tersinkron
+        $arInner = "
+            SELECT (pinv.amount - GREATEST(pinv.paid_amount,
+                        COALESCE((SELECT SUM(x.amount_paid) FROM project_payment_items x WHERE x.invoice_id = pinv.id), 0))) AS os,
+                   (CURRENT_DATE - pinv.invoice_date) AS age
+            FROM project_invoices pinv
+            WHERE (pinv.amount - GREATEST(pinv.paid_amount,
+                        COALESCE((SELECT SUM(x.amount_paid) FROM project_payment_items x WHERE x.invoice_id = pinv.id), 0))) > 0.005"
+            . ($projectId ? " AND pinv.project_id = :pid" : "");
+
+        $apStatus = "COALESCE(LOWER(h.status),'') NOT IN ('void','cancelled','canceled','dibatalkan','reversed')";
+        if ($projectId) {
+            // porsi invoice yang menjadi milik proyek terpilih (berdasar nilai matched per PO.project_id)
+            $apInner = "
+                SELECT ((h.total_amount - h.paid_amount) * COALESCE(sh.share, 0)) AS os,
+                       (CURRENT_DATE - h.invoice_date) AS age
+                FROM purchase_invoice_hdr h
+                JOIN (
+                    SELECT d.invoice_hdr_id,
+                           SUM(CASE WHEN po.project_id = :pid THEN d.matched_amount ELSE 0 END)
+                               / NULLIF(SUM(d.matched_amount), 0) AS share
+                    FROM purchase_invoice_dtl d
+                    JOIN grn_hdr g ON g.id = d.grn_hdr_id
+                    JOIN purchase_orders po ON po.id = g.po_id
+                    GROUP BY d.invoice_hdr_id
+                ) sh ON sh.invoice_hdr_id = h.id
+                WHERE {$apStatus}
+                  AND (h.total_amount - h.paid_amount) > 0.005";
+        } else {
+            $apInner = "
+                SELECT (h.total_amount - h.paid_amount) AS os,
+                       (CURRENT_DATE - h.invoice_date) AS age
+                FROM purchase_invoice_hdr h
+                WHERE {$apStatus}
+                  AND (h.total_amount - h.paid_amount) > 0.005";
+        }
+
+        $fetchBucket = function (string $inner) use ($db, $bucketSql, $projectId) {
+            $stmt = $db->prepare(sprintf($bucketSql, $inner));
+            if ($projectId) {
+                $stmt->bindValue(':pid', $projectId, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+            $r = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            return [
+                'age_30'      => (float)($r['age_30'] ?? 0),
+                'age_60'      => (float)($r['age_60'] ?? 0),
+                'age_90'      => (float)($r['age_90'] ?? 0),
+                'age_over_90' => (float)($r['age_over_90'] ?? 0),
+                'total'       => (float)($r['total'] ?? 0),
+                'count'       => (int)($r['cnt'] ?? 0),
+            ];
+        };
+
+        try {
+            out([
+                'success' => true,
+                'as_of'   => date('Y-m-d'),
+                'ar'      => $fetchBucket($arInner),
+                'ap'      => $fetchBucket($apInner),
+            ]);
+        } catch (Exception $e) {
+            error_log('[dashboardCRD] financial_aging: ' . $e->getMessage());
+            out(['success' => false, 'message' => 'Query aging gagal: ' . $e->getMessage()]);
+        }
+        break;
+
+    // 4b. PERFORMA KEUANGAN (PENDAPATAN VS PENGELUARAN PER BULAN)
+    //     [DIUBAH] tiap sumber punya parameter sendiri -> bisa dirinci per sumber (?debug=1) dan
+    //     respons memuat available_years agar pilihan tahun di UI mengikuti data yang ada.
     case 'read_financial_performance':
         $year      = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
         $projectId = (int)($_GET['project_id'] ?? 0);
         $from      = sprintf('%04d-01-01', $year);
         $to        = sprintf('%04d-01-01', $year + 1);
-
-        $params = [];
-        $P = function ($v) use (&$params) {
-            $k = ':p' . count($params);
-            $params[$k] = $v;
-            return $k;
-        };
         $cancelled = "('VOID','CANCELLED','CANCELED','BATAL')";
 
-        $inc = [];
-        $exp = [];
+        $n = 0;
+        $mk = function ($v, array &$bag) use (&$n) {   // buat placeholder unik & simpan nilainya
+            $k = ':p' . ($n++);
+            $bag[$k] = $v;
+            return $k;
+        };
+        $sources = [];   // tiap elemen: type (inc|exp), name, sql, params
 
         if (SRC_FIN_INCOME) {
-            $inc[] = "SELECT EXTRACT(MONTH FROM income_date)::int AS bln, amount
-                      FROM financial_incomes
-                      WHERE income_date >= CAST({$P($from)} AS date) AND income_date < CAST({$P($to)} AS date)
-                        AND COALESCE(UPPER(status),'') NOT IN {$cancelled}"
-                   . ($projectId ? " AND project_id = {$P($projectId)}" : "");
+            $bag = [];
+            $sources[] = ['type' => 'inc', 'name' => 'financial_incomes', 'params' => &$bag, 'sql' =>
+                "SELECT EXTRACT(MONTH FROM income_date)::int AS bln, amount
+                 FROM financial_incomes
+                 WHERE income_date >= CAST({$mk($from, $bag)} AS date) AND income_date < CAST({$mk($to, $bag)} AS date)
+                   AND COALESCE(UPPER(status),'') NOT IN {$cancelled}"
+                . ($projectId ? " AND project_id = {$mk($projectId, $bag)}" : "")];
+            unset($bag);
         }
         if (SRC_PRJ_PAYMENT) {
-            $inc[] = "SELECT EXTRACT(MONTH FROM pp.payment_date)::int AS bln, ppi.amount_paid AS amount
-                      FROM project_payment_items ppi
-                      JOIN project_payments pp ON pp.id = ppi.payment_id
-                      JOIN project_invoices pi ON pi.id = ppi.invoice_id
-                      WHERE pp.payment_date >= CAST({$P($from)} AS date) AND pp.payment_date < CAST({$P($to)} AS date)"
-                   . ($projectId ? " AND pi.project_id = {$P($projectId)}" : "");
+            $bag = [];
+            $sources[] = ['type' => 'inc', 'name' => 'project_payment_items', 'params' => &$bag, 'sql' =>
+                "SELECT EXTRACT(MONTH FROM pp.payment_date)::int AS bln, ppi.amount_paid AS amount
+                 FROM project_payment_items ppi
+                 JOIN project_payments pp ON pp.id = ppi.payment_id
+                 JOIN project_invoices pinv ON pinv.id = ppi.invoice_id
+                 WHERE pp.payment_date >= CAST({$mk($from, $bag)} AS date) AND pp.payment_date < CAST({$mk($to, $bag)} AS date)"
+                . ($projectId ? " AND pinv.project_id = {$mk($projectId, $bag)}" : "")];
+            unset($bag);
         }
         if (SRC_FIN_EXPENSE) {
-            $exp[] = "SELECT EXTRACT(MONTH FROM expense_date)::int AS bln, amount
-                      FROM financial_expenses
-                      WHERE expense_date >= CAST({$P($from)} AS date) AND expense_date < CAST({$P($to)} AS date)
-                        AND COALESCE(UPPER(status),'') NOT IN {$cancelled}"
-                   . ($projectId ? " AND project_id = {$P($projectId)}" : "");
+            $bag = [];
+            $sources[] = ['type' => 'exp', 'name' => 'financial_expenses', 'params' => &$bag, 'sql' =>
+                "SELECT EXTRACT(MONTH FROM expense_date)::int AS bln, amount
+                 FROM financial_expenses
+                 WHERE expense_date >= CAST({$mk($from, $bag)} AS date) AND expense_date < CAST({$mk($to, $bag)} AS date)
+                   AND COALESCE(UPPER(status),'') NOT IN {$cancelled}"
+                . ($projectId ? " AND project_id = {$mk($projectId, $bag)}" : "")];
+            unset($bag);
         }
         if (SRC_MATERIAL_OUT) {
-            $exp[] = "SELECT EXTRACT(MONTH FROM h.issue_date)::int AS bln, (i.qty_out * i.unit_cost) AS amount
-                      FROM material_out_items i
-                      JOIN material_out_header h ON h.id = i.material_out_id
-                      WHERE h.issue_date >= CAST({$P($from)} AS date) AND h.issue_date < CAST({$P($to)} AS date)
-                        AND h.status = 'posted' AND h.reversed_at IS NULL"
-                   . ($projectId ? " AND h.project_id = {$P($projectId)}" : "");
+            $bag = [];
+            $sources[] = ['type' => 'exp', 'name' => 'material_out', 'params' => &$bag, 'sql' =>
+                "SELECT EXTRACT(MONTH FROM h.issue_date)::int AS bln, (i.qty_out * i.unit_cost) AS amount
+                 FROM material_out_items i
+                 JOIN material_out_header h ON h.id = i.material_out_id
+                 WHERE h.issue_date >= CAST({$mk($from, $bag)} AS date) AND h.issue_date < CAST({$mk($to, $bag)} AS date)
+                   AND h.status = 'posted' AND h.reversed_at IS NULL"
+                . ($projectId ? " AND h.project_id = {$mk($projectId, $bag)}" : "")];
+            unset($bag);
+        }
+        if (SRC_MATERIAL_IN) {   // [BARU] opsional
+            $bag = [];
+            $sources[] = ['type' => 'exp', 'name' => 'material_receipt', 'params' => &$bag, 'sql' =>
+                "SELECT EXTRACT(MONTH FROM h.receipt_date)::int AS bln, (i.qty_in * i.unit_cost) AS amount
+                 FROM material_receipt_items i
+                 JOIN material_receipt_header h ON h.id = i.receipt_id
+                 WHERE h.receipt_date >= CAST({$mk($from, $bag)} AS date) AND h.receipt_date < CAST({$mk($to, $bag)} AS date)
+                   AND h.status = 'posted' AND h.reversed_at IS NULL"
+                . ($projectId ? " AND h.project_id = {$mk($projectId, $bag)}" : "")];
+            unset($bag);
         }
 
-        $empty  = "SELECT 0::int AS bln, 0::numeric AS amount WHERE false";
-        $incSql = $inc ? implode(' UNION ALL ', $inc) : $empty;
-        $expSql = $exp ? implode(' UNION ALL ', $exp) : $empty;
+        $empty = "SELECT 0::int AS bln, 0::numeric AS amount WHERE false";
+        $incParts = [];
+        $expParts = [];
+        $params   = [];
+        foreach ($sources as $s) {
+            if ($s['type'] === 'inc') { $incParts[] = $s['sql']; } else { $expParts[] = $s['sql']; }
+            $params += $s['params'];
+        }
+        $incSql = $incParts ? implode(' UNION ALL ', $incParts) : $empty;
+        $expSql = $expParts ? implode(' UNION ALL ', $expParts) : $empty;
 
         $sql = "
             WITH inc AS ({$incSql}), exp AS ({$expSql})
@@ -173,26 +290,57 @@ switch ($action) {
                 $pengeluaran[$idx] = (float)$r['total_exp'];
             }
         } catch (Exception $e) {
-            // Jangan disembunyikan lagi: kirim error ke frontend agar terlihat.
             error_log('[dashboardCRD] financial_performance: ' . $e->getMessage());
             out(['success' => false, 'message' => 'Query performa keuangan gagal: ' . $e->getMessage()]);
         }
 
+        // [BARU] daftar tahun yang punya transaksi (selalu sertakan tahun berjalan & tahun yang diminta)
+        $years = [(int)date('Y'), $year];
+        try {
+            $yrSql = "SELECT DISTINCT y FROM (
+                        SELECT EXTRACT(YEAR FROM income_date)::int AS y FROM financial_incomes
+                        UNION SELECT EXTRACT(YEAR FROM expense_date)::int FROM financial_expenses
+                        UNION SELECT EXTRACT(YEAR FROM payment_date)::int FROM project_payments
+                        UNION SELECT EXTRACT(YEAR FROM issue_date)::int FROM material_out_header
+                      ) t WHERE y IS NOT NULL ORDER BY y DESC";
+            foreach ($db->query($yrSql)->fetchAll(PDO::FETCH_COLUMN) as $y) {
+                $years[] = (int)$y;
+            }
+        } catch (Exception $e) {
+            error_log('[dashboardCRD] available_years: ' . $e->getMessage());
+        }
+        $years = array_values(array_unique($years));
+        rsort($years);
+
         $resp = [
-            'success'  => true,
-            'year'     => $year,
-            'labels'   => ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
-            'datasets' => ['pendapatan' => $pendapatan, 'pengeluaran' => $pengeluaran],
+            'success'         => true,
+            'year'            => $year,
+            'labels'          => ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
+            'datasets'        => ['pendapatan' => $pendapatan, 'pengeluaran' => $pengeluaran],
+            'available_years' => $years,
         ];
 
-        // ?debug=1 -> tampilkan jumlah baris tiap sumber (untuk diagnosa "kenapa 0")
+        // ?debug=1 -> jumlah baris tabel + total per sumber untuk tahun terpilih (diagnosa "kenapa 0")
         if (!empty($_GET['debug'])) {
-            $dbg = [];
+            $dbg = ['rows' => [], 'per_source_year_total' => []];
             foreach (['financial_incomes', 'project_payment_items', 'financial_expenses', 'material_out_items', 'material_out_header'] as $t) {
                 try {
-                    $dbg[$t] = (int)$db->query("SELECT COUNT(*) FROM {$t}")->fetchColumn();
+                    $dbg['rows'][$t] = (int)$db->query("SELECT COUNT(*) FROM {$t}")->fetchColumn();
                 } catch (Exception $e) {
-                    $dbg[$t] = 'ERR: ' . $e->getMessage();
+                    $dbg['rows'][$t] = 'ERR: ' . $e->getMessage();
+                }
+            }
+            foreach ($sources as $s) {
+                try {
+                    $st = $db->prepare("SELECT COALESCE(SUM(amount),0), COUNT(*) FROM ({$s['sql']}) x");
+                    foreach ($s['params'] as $k => $v) {
+                        $st->bindValue($k, $v, is_int($v) ? PDO::PARAM_INT : PDO::PARAM_STR);
+                    }
+                    $st->execute();
+                    $row = $st->fetch(PDO::FETCH_NUM);
+                    $dbg['per_source_year_total'][$s['type'] . ':' . $s['name']] = ['total' => (float)$row[0], 'rows' => (int)$row[1]];
+                } catch (Exception $e) {
+                    $dbg['per_source_year_total'][$s['type'] . ':' . $s['name']] = 'ERR: ' . $e->getMessage();
                 }
             }
             $resp['debug'] = $dbg;

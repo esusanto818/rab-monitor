@@ -235,12 +235,15 @@ $currentPage =$_GET['page'] ?? 'dashboard';
                     <div class="flex justify-between items-center pb-3 border-b border-[#0a2d4a] mb-3">
                         <h2 class="text-base font-bold text-cyan-400 uppercase tracking-wider font-rajdhani">Performa Keuangan (Bulanan)</h2>
                         <select id="fin_year_select" onchange="loadFinancialPerformance()" class="bg-[#071d30] border border-[#0a2d4a] text-cyan-200 text-[10px] rounded px-2 py-0.5">
+                            <!-- [DIUBAH] opsi tahun diisi dari server (available_years); 2 opsi di bawah hanya fallback -->
                             <option value="2026" selected>2026</option>
                             <option value="2025">2025</option>
                         </select>
                     </div>
                     <div class="relative w-full h-52">
                         <canvas id="finChartCanvas"></canvas>
+                        <!-- [BARU] pesan saat data kosong / error -->
+                        <div id="fin_empty" class="hidden absolute inset-0 flex items-center justify-center text-center px-6 text-[11px] text-slate-400 font-sans pointer-events-none"></div>
                     </div>
                 </div>
             </div>
@@ -430,38 +433,50 @@ $currentPage =$_GET['page'] ?? 'dashboard';
             loadMaterialMonitoring();
         }
 
+        // [DIUBAH] Aging: backend 'read_financial_aging' sebelumnya TIDAK ADA -> respons {success:false} dan
+        // tabel tertahan di "Memuat data aging...". Sekarang ada endpoint-nya + penanganan error/else di UI.
         async function loadFinancialAging() {
             const tbody = document.getElementById('aging_tbody');
+            const showMsg = (msg, cls) => {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-3 text-center ${cls} font-sans">${msg}</td></tr>`;
+            };
             try {
                 const res = await fetch(`${API_ENDPOINT}?action=read_financial_aging&project_id=${currentProjectId}`);
                 const json = await res.json();
 
-                if (json.success) {
-                    const ar = json.ar;
-                    const ap = json.ap;
-
-                    tbody.innerHTML = `
-                        <tr class="hover:bg-[#071d30]/50 transition">
-                            <td class="py-2.5 font-sans font-semibold text-cyan-400">Piutang (AR)</td>
-                            <td class="py-2.5 text-right text-slate-200">${formatNum(ar.age_30)}</td>
-                            <td class="py-2.5 text-right text-amber-400 font-medium">${formatNum(ar.age_60)}</td>
-                            <td class="py-2.5 text-right text-slate-200">${formatNum(ar.age_90)}</td>
-                            <td class="py-2.5 text-right text-rose-400 font-semibold">${formatNum(ar.age_over_90)}</td>
-                            <td class="py-2.5 text-right text-emerald-400 font-bold">${formatNum(ar.total)}</td>
-                        </tr>
-                        <tr class="hover:bg-[#071d30]/50 transition">
-                            <td class="py-2.5 font-sans font-semibold text-purple-400">Hutang (AP)</td>
-                            <td class="py-2.5 text-right text-slate-200">${formatNum(ap.age_30)}</td>
-                            <td class="py-2.5 text-right text-amber-400 font-medium">${formatNum(ap.age_60)}</td>
-                            <td class="py-2.5 text-right text-rose-400 font-semibold">${formatNum(ap.age_90)}</td>
-                            <td class="py-2.5 text-right text-slate-200">${formatNum(ap.age_over_90)}</td>
-                            <td class="py-2.5 text-right text-amber-400 font-bold">${formatNum(ap.total)}</td>
-                        </tr>
-                    `;
+                if (!json.success) {
+                    showMsg(json.message || 'Gagal memuat data aging.', 'text-rose-400');
+                    return;
                 }
+
+                const ar = json.ar, ap = json.ap;
+                const row = (label, labelCls, d, c) => `
+                    <tr class="hover:bg-[#071d30]/50 transition">
+                        <td class="py-2.5 font-sans font-semibold ${labelCls}">${label}
+                            <span class="block text-[9px] font-normal text-slate-500">${d.count} invoice outstanding</span></td>
+                        <td class="py-2.5 text-right text-slate-200">${formatNum(d.age_30)}</td>
+                        <td class="py-2.5 text-right text-amber-400 font-medium">${formatNum(d.age_60)}</td>
+                        <td class="py-2.5 text-right text-orange-400 font-medium">${formatNum(d.age_90)}</td>
+                        <td class="py-2.5 text-right text-rose-400 font-semibold">${formatNum(d.age_over_90)}</td>
+                        <td class="py-2.5 text-right ${c} font-bold">${formatNum(d.total)}</td>
+                    </tr>`;
+                const net = (k) => (ar[k] || 0) - (ap[k] || 0);   // [BARU] baris netto AR - AP
+
+                tbody.innerHTML =
+                    row('Piutang (AR)', 'text-cyan-400', ar, 'text-emerald-400') +
+                    row('Hutang (AP)', 'text-purple-400', ap, 'text-amber-400') + `
+                    <tr class="border-t border-[#0a2d4a]">
+                        <td class="py-2.5 font-sans font-semibold text-slate-300">Netto (AR - AP)</td>
+                        <td class="py-2.5 text-right text-slate-300">${formatNum(net('age_30'))}</td>
+                        <td class="py-2.5 text-right text-slate-300">${formatNum(net('age_60'))}</td>
+                        <td class="py-2.5 text-right text-slate-300">${formatNum(net('age_90'))}</td>
+                        <td class="py-2.5 text-right text-slate-300">${formatNum(net('age_over_90'))}</td>
+                        <td class="py-2.5 text-right text-slate-100 font-bold">${formatNum(net('total'))}</td>
+                    </tr>
+                    <tr><td colspan="6" class="pt-2 text-right text-[9px] text-slate-500 font-sans">Umur dihitung dari tanggal invoice, per ${json.as_of}</td></tr>`;
             } catch (err) {
                 console.error('Error load financial aging:', err);
-                tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-center text-rose-400 font-sans">Gagal memuat data aging.</td></tr>';
+                showMsg('Gagal memuat data aging.', 'text-rose-400');
             }
         }
 
@@ -530,23 +545,52 @@ $currentPage =$_GET['page'] ?? 'dashboard';
             }
         }
 
+        // [BARU] isi dropdown tahun dari data server, pertahankan pilihan user
+        function fillYearSelect(years, selected) {
+            const sel = document.getElementById('fin_year_select');
+            if (!years || !years.length) return;
+            sel.innerHTML = years.map(y => `<option value="${y}" ${String(y) === String(selected) ? 'selected' : ''}>${y}</option>`).join('');
+        }
+
+        // [BARU] pesan di atas chart (kosong / error)
+        function setFinMessage(msg, isError) {
+            const el = document.getElementById('fin_empty');
+            if (!msg) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+            el.className = 'absolute inset-0 flex items-center justify-center text-center px-6 text-[11px] font-sans pointer-events-none '
+                         + (isError ? 'text-rose-400' : 'text-slate-400');
+            el.textContent = msg;
+        }
+
+        // [DIUBAH] sebelumnya error/success:false diam saja -> chart tampak "kosong" tanpa alasan
         async function loadFinancialPerformance() {
             const year = document.getElementById('fin_year_select').value;
             try {
                 const res = await fetch(`${API_ENDPOINT}?action=read_financial_performance&year=${year}&project_id=${currentProjectId}`);
                 const json = await res.json();
 
-                if (json.success) {
-                    renderFinChart(json.labels, json.datasets.pendapatan, json.datasets.pengeluaran);
+                if (!json.success) {
+                    renderFinChart(['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'], [], []);
+                    setFinMessage(json.message || 'Gagal memuat performa keuangan.', true);
+                    return;
                 }
+
+                fillYearSelect(json.available_years, json.year);
+                renderFinChart(json.labels, json.datasets.pendapatan, json.datasets.pengeluaran);
+
+                const total = [...json.datasets.pendapatan, ...json.datasets.pengeluaran].reduce((a, b) => a + (Number(b) || 0), 0);
+                setFinMessage(total === 0 ? `Belum ada transaksi pendapatan/pengeluaran pada ${json.year}` : '', false);
             } catch (err) {
                 console.error('Error load financial performance:', err);
+                setFinMessage('Gagal terhubung ke server.', true);
             }
         }
 
         function renderFinChart(labels, incData, expData) {
             const ctx = document.getElementById('finChartCanvas').getContext('2d');
             if (finChart) finChart.destroy();
+
+            // [BARU] format ringkas untuk sumbu Y (Rp 1,5 jt) dan rupiah lengkap untuk tooltip
+            const compact = (v) => Number(v).toLocaleString('id-ID', { notation: 'compact', maximumFractionDigits: 1 });
 
             finChart = new Chart(ctx, {
                 type: 'bar',
@@ -560,10 +604,13 @@ $currentPage =$_GET['page'] ?? 'dashboard';
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { labels: { color: '#94a3b8', font: { size: 9 } } } },
+                    plugins: {
+                        legend: { labels: { color: '#94a3b8', font: { size: 9 } } },
+                        tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${formatIDR(c.parsed.y)}` } }
+                    },
                     scales: {
                         x: { ticks: { color: '#94a3b8', font: { size: 8 } }, grid: { color: '#0a2d4a' } },
-                        y: { ticks: { color: '#94a3b8', font: { size: 8 } }, grid: { color: '#0a2d4a' } }
+                        y: { beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 8 }, callback: compact }, grid: { color: '#0a2d4a' } }
                     }
                 }
             });
