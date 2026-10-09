@@ -6,6 +6,7 @@
                   Alur: Diajukan -> (Kirim lewat issue W/H) Dikirim -> (Selesaikan) Diganti | Kredit
                   Tombol template: Add = retur baru | Edit = ubah retur Diajukan | Delete = Batalkan retur Diajukan
                   Tombol panel detail: Kirim / Batalkan (Diajukan), Batal Kirim / Selesaikan (Dikirim)
+  Entry retur    : pilih dokumen W/H RCV -> proyek, gudang, supplier, PO terisi otomatis; item = item RCV (isi qty + jenis cacat)
   Backend       : ../php-crud/purchase.returnCRD.php
   [CHANGED]     : seluruh file ditulis ulang -- sebelumnya membuat grid/toolbar/window sendiri ke body,
                   sehingga #editorWdw template tampil kosong dan grid tidak muncul; URL AJAX juga relatif
@@ -23,8 +24,8 @@ Ext.onReady(function () {
 
     var dataRecord = null;   // baris retur terpilih di grid utama
     var editId = 0;          // 0 = retur baru, >0 = edit retur tsb
-    var hdrForm = null, matBar = null;
-    var fProject, fSupplier, fWh, fPo, fDate, fDo, fRemark, fMat;
+    var hdrForm = null;
+    var fRcv, fProjInfo, fWhInfo, fSupInfo, fPoInfo, fDate, fDo, fRemark;     // [CHANGED] dokumen RCV sebagai dasar retur
 
     function getFormAccess() {
         return (typeof formAccess !== 'undefined') ? formAccess : (window.formAccess || 0);
@@ -275,32 +276,26 @@ Ext.onReady(function () {
         root: 'data', totalProperty: 'totalCount', idProperty: 'id',
         fields: ['id', 'ref_no', 'return_date', 'project_id', 'project_name', 'warehouse_id', 'warehouse_name',
                  'supplier_id', 'supplier_name', 'po_id', 'po_number', 'supplier_do_no', 'status', 'remark',
-                 'material_out_id', 'issue_ref_no', 'sent_date', 'carrier',
+                 'wh_receiving_hdr_id', 'rcv_ref_no', 'material_out_id', 'issue_ref_no', 'sent_date', 'carrier',
                  'resolution_type', 'resolution_date', 'credit_note_no', { name: 'credit_amount', type: 'float' }, 'resolution_note',
                  { name: 'line_count', type: 'int' }, { name: 'total_qty', type: 'float' }, { name: 'total_amount', type: 'float' }],
         listeners: { exception: storeError }
     });
     mainDs.load();
 
-    var projectDs = new Ext.data.JsonStore({ url: CRD, baseParams: { action: 'lookup_projects' }, root: 'data', idProperty: 'id',
-        fields: ['id', 'name'], listeners: { exception: storeError } });
-    var supplierDs = new Ext.data.JsonStore({ url: CRD, baseParams: { action: 'lookup_suppliers' }, root: 'data', idProperty: 'id',
-        fields: ['id', 'name'], listeners: { exception: storeError } });
-    var whDs = new Ext.data.JsonStore({ url: CRD, baseParams: { action: 'lookup_warehouses' }, root: 'data', idProperty: 'id',
-        fields: ['id', 'code', 'name'], listeners: { exception: storeError } });
-    var poDs = new Ext.data.JsonStore({ url: CRD, baseParams: { action: 'lookup_pos' }, root: 'data', idProperty: 'id',
-        fields: ['id', 'po_number', 'po_date'], listeners: { exception: storeError } });
-    var materialDs = new Ext.data.JsonStore({
-        url: CRD, baseParams: { action: 'lookup_materials' }, root: 'data',
-        fields: ['material_id', 'material_code', 'material_name', 'unit', { name: 'onhand', type: 'float' },
-                 { name: 'open_claim', type: 'float' }, { name: 'available', type: 'float' }],
+    // [CHANGED] entry retur berbasis dokumen RCV: hanya store RCV + item RCV (tanpa combo proyek/supplier/gudang/PO/material)
+    var rcvDs = new Ext.data.JsonStore({
+        url: CRD, baseParams: { action: 'lookup_rcv' }, root: 'data', idProperty: 'id',
+        fields: ['id', 'ref_no', 'label', 'received_date', 'warehouse_id', 'warehouse_name', 'grn_no',
+                 'po_id', 'po_number', 'project_id', 'project_name', 'supplier_id', 'supplier_name'],
         listeners: { exception: storeError }
     });
-    var itemField = ['material_id', 'material_code', 'material_name', 'unit', 'available',
+    var itemField = ['material_id', 'material_code', 'material_name', 'unit',
+                     { name: 'qty_rcv', type: 'float' }, { name: 'qty_returned', type: 'float' }, { name: 'available', type: 'float' },
                      { name: 'qty_claim', type: 'float' }, 'defect_type', 'defect_note', 'evidence_ref'];
     var itemDs = new Ext.data.Store({ reader: new Ext.data.JsonReader({ root: 'data' }, itemField) });
     var defectData = [];
-    Ext.each(DEFECT_TYPES, function (d) { defectData.push([d]); });      // [CHANGED] data jenis cacat untuk combo
+    Ext.each(DEFECT_TYPES, function (d) { defectData.push([d]); });      // data jenis cacat untuk combo
     var defectDs = new Ext.data.ArrayStore({ fields: ['v'], data: defectData });
 
     // ------------------------------------------------------------
@@ -316,6 +311,7 @@ Ext.onReady(function () {
             { header: 'Tanggal', dataIndex: 'return_date', width: 85, align: 'center' },
             { header: 'Proyek', dataIndex: 'project_name', width: 170, renderer: CellWrap },
             { header: 'Supplier', dataIndex: 'supplier_name', width: 150, renderer: CellWrap },
+            { header: 'No. RCV', dataIndex: 'rcv_ref_no', width: 120, renderer: function (v) { return v || '-'; } },      // [CHANGED]
             { header: 'PO', dataIndex: 'po_number', width: 100, renderer: function (v) { return v || '-'; } },
             { header: 'Item', dataIndex: 'line_count', width: 45, align: 'center' },
             { header: 'Total Qty', dataIndex: 'total_qty', width: 90, align: 'right', renderer: function (v) { return fmtQty(v); } },
@@ -353,7 +349,7 @@ Ext.onReady(function () {
     updateMainButtons();
 
     // ------------------------------------------------------------
-    // 3. Editor: header (form) + pemilih material + grid item
+    // 3. Editor: pilih dokumen RCV -> header terisi otomatis + grid item RCV
     // ------------------------------------------------------------
     var itemGrid = new stdGridEditor({
         store: itemDs,
@@ -364,8 +360,9 @@ Ext.onReady(function () {
             { header: 'Kode', dataIndex: 'material_code', width: 80 },
             { header: 'Material', dataIndex: 'material_name', width: 170 },
             { header: 'Sat', dataIndex: 'unit', width: 45, align: 'center' },
-            { header: 'Tersedia', dataIndex: 'available', width: 80, align: 'right',
-              renderer: function (v) { return (v === null || v === undefined || v === '') ? '' : fmtQty(v); } },
+            { header: 'Qty RCV', dataIndex: 'qty_rcv', width: 80, align: 'right', renderer: function (v) { return fmtQty(v); } },
+            { header: 'Sudah Diretur', dataIndex: 'qty_returned', width: 85, align: 'right', renderer: function (v) { return fmtQty(v); } },
+            { header: 'Boleh Diretur', dataIndex: 'available', width: 85, align: 'right', renderer: function (v) { return fmtQty(v); } },
             { header: 'Qty Retur', dataIndex: 'qty_claim', width: 85, align: 'right',
               editor: new myNumberField({ decimalPrecision: 4 }),
               renderer: function (v) { return '<b>' + fmtQty(v) + '</b>'; } },
@@ -373,28 +370,20 @@ Ext.onReady(function () {
               editor: new myComboField({ store: defectDs, displayField: 'v', valueField: 'v', mode: 'local',
                                          triggerAction: 'all', editable: false, forceSelection: true }) },
             { header: 'Keterangan', dataIndex: 'defect_note', width: 160, editor: new myTextField(), renderer: function (v) { return enc(v); } },
-            { header: 'Bukti (no. foto/link)', dataIndex: 'evidence_ref', width: 120, editor: new myTextField(), renderer: function (v) { return enc(v); } },
-            { id: 'rtDeleteCol', header: '', dataIndex: 'material_id', width: 32, align: 'center', fixed: true,
-              renderer: function () { return '<span style="color:#e05353;cursor:pointer;font-weight:bold;font-size:14px;" title="Hapus baris">&#10005;</span>'; } }
+            { header: 'Bukti (no. foto/link)', dataIndex: 'evidence_ref', width: 120, editor: new myTextField(), renderer: function (v) { return enc(v); } }
         ],
         listeners: {
             validateedit: function (e) {
-                var av = e.record.get('available');
-                if (e.field === 'qty_claim' && av !== null && av !== undefined && av !== '' && parseFloat(e.value) > parseFloat(av) + EPS) {
-                    showErr('Qty melebihi stok tersedia (' + fmtQty(av) + ').');
+                if (e.field === 'qty_claim' && parseFloat(e.value) > parseFloat(e.record.get('available')) + EPS) {
+                    showErr('Qty melebihi qty yang boleh diretur (' + fmtQty(e.record.get('available')) + ').');
                     e.cancel = true;
-                }
-            },
-            cellclick: function (grid, rowIndex, columnIndex) {
-                if (grid.getColumnModel().getColumnId(columnIndex) === 'rtDeleteCol') {
-                    grid.getStore().removeAt(rowIndex);
                 }
             }
         }
     });
     itemGrid.addClass('x-grid3-gridEditor');
 
-    // Tempat form header + bar pemilih material (disisipkan sebelum grid editor)
+    // Tempat form header (disisipkan sebelum grid editor)
     (function injectExtraUI() {
         var g = document.getElementById('editorFormGrid');
         if (g && !document.getElementById('rtHdrForm')) {
@@ -402,11 +391,6 @@ Ext.onReady(function () {
             hdr.id = 'rtHdrForm';
             hdr.style.cssText = 'margin-bottom:6px;';
             g.parentNode.insertBefore(hdr, g);
-
-            var bar = document.createElement('div');
-            bar.id = 'rtMatBar';
-            bar.style.cssText = 'margin-bottom:6px;';
-            g.parentNode.insertBefore(bar, g);
         }
     })();
 
@@ -414,32 +398,18 @@ Ext.onReady(function () {
     function ensureHdrForm() {
         if (hdrForm) { hdrForm.doLayout(); return; }
 
-        fProject = new myComboField({
-            fieldLabel: 'Proyek', store: projectDs, displayField: 'name', valueField: 'id',
-            mode: 'local', triggerAction: 'all', forceSelection: true, allowBlank: false, anchor: '95%',
-            listeners: {
-                select: function () {
-                    fWh.clearValue(); itemDs.removeAll(); fMat.clearValue();
-                    whDs.load({ params: { project_id: fProject.getValue() } });
-                    reloadPo();
-                }
-            }
+        // satu-satunya pilihan: dokumen RCV (cari no. RCV / GRN / PO / proyek / supplier)
+        fRcv = new myComboField({
+            fieldLabel: 'Dokumen RCV', store: rcvDs, displayField: 'label', valueField: 'id',
+            mode: 'remote', queryParam: 'query', minChars: 0, triggerAction: 'all', forceSelection: true, allowBlank: false,
+            anchor: '98%', listWidth: 700, emptyText: 'Pilih / cari RCV (no. RCV, GRN, PO, proyek, supplier)...',
+            listeners: { select: function (combo, rec) { onRcvSelected(rec); } }
         });
-        fSupplier = new myComboField({
-            fieldLabel: 'Supplier', store: supplierDs, displayField: 'name', valueField: 'id',
-            mode: 'local', triggerAction: 'all', forceSelection: true, allowBlank: false, anchor: '95%',
-            listeners: { select: function () { reloadPo(); } }
-        });
-        fWh = new myComboField({
-            fieldLabel: 'Gudang', store: whDs, displayField: 'name', valueField: 'id',
-            mode: 'local', triggerAction: 'all', forceSelection: true, allowBlank: false, anchor: '95%',
-            emptyText: 'Pilih proyek dulu',
-            listeners: { select: function () { itemDs.removeAll(); fMat.clearValue(); } }
-        });
-        fPo = new myComboField({
-            fieldLabel: 'PO Referensi', store: poDs, displayField: 'po_number', valueField: 'id',
-            mode: 'local', triggerAction: 'all', forceSelection: true, anchor: '95%', value: 0
-        });
+        // diturunkan otomatis dari RCV (read-only)
+        fProjInfo = new Ext.form.DisplayField({ fieldLabel: 'Proyek', value: '-', anchor: '95%' });
+        fWhInfo = new Ext.form.DisplayField({ fieldLabel: 'Gudang', value: '-', anchor: '95%' });
+        fSupInfo = new Ext.form.DisplayField({ fieldLabel: 'Supplier', value: '-', anchor: '95%' });
+        fPoInfo = new Ext.form.DisplayField({ fieldLabel: 'PO / GRN', value: '-', anchor: '95%' });
         fDate = new Ext.form.DateField({ fieldLabel: 'Tanggal', format: 'd/m/Y', value: new Date(), allowBlank: false, width: 120 });
         fDo = new myTextField({ fieldLabel: 'No. DO Asal', anchor: '95%' });
         fRemark = new myTextField({ fieldLabel: 'Catatan', anchor: '95%' });
@@ -452,50 +422,37 @@ Ext.onReady(function () {
             border: false,
             layout: 'column',
             bodyStyle: 'background:transparent; padding:4px 2px 0 2px;',
-            items: [col(0.34, [fProject, fWh, fDate]), col(0.33, [fSupplier, fPo]), col(0.33, [fDo, fRemark])]
-        });
-
-        // pemilih material yang sudah RCV di gudang (bila ada PO -> hanya material pada PO tsb)
-        fMat = new Ext.form.ComboBox({
-            store: materialDs, displayField: 'material_name', valueField: 'material_id', mode: 'remote', queryParam: 'query',
-            minChars: 0, triggerAction: 'all', forceSelection: true, width: 400, listWidth: 520,
-            emptyText: 'Cari material yang sudah RCV di gudang...',
-            tpl: '<tpl for="."><div class="x-combo-list-item">{material_code} - {material_name} ' +
-                 '<b>(stok {onhand}, tersedia {available} {unit})</b></div></tpl>',
-            listeners: {
-                beforequery: function () {
-                    if (!fWh.getValue()) { showErr('Pilih proyek dan gudang terlebih dahulu.'); return false; }
-                    materialDs.baseParams.warehouse_id = fWh.getValue();
-                    materialDs.baseParams.po_id = fPo.getValue() || 0;
-                    materialDs.baseParams.exclude_id = editId;
-                }
-            }
-        });
-        matBar = new Ext.Toolbar({
-            renderTo: 'rtMatBar',
-            items: [fMat, ' ', { text: 'Tambah Material', handler: addMaterial },
-                    '->', '<span style="color:#9fc3d1;">Satu material boleh muncul lebih dari sekali (beda jenis cacat); total qty dibatasi stok tersedia.</span>']
+            items: [col(1, [fRcv]),
+                    col(0.34, [fProjInfo, fWhInfo, fDate]),
+                    col(0.33, [fSupInfo, fPoInfo]),
+                    col(0.33, [fDo, fRemark])]
         });
     }
 
-    function reloadPo() {
-        fPo.setValue(0);
-        if (fProject.getValue() && fSupplier.getValue()) {
-            poDs.load({ params: { project_id: fProject.getValue(), supplier_id: fSupplier.getValue() } });
-        } else { poDs.removeAll(); }
+    // Isi info header dari baris RCV terpilih
+    function fillRcvInfo(rec) {
+        fProjInfo.setValue(rec ? '<b>' + enc(rec.get('project_name')) + '</b>' : '-');
+        fWhInfo.setValue(rec ? '<b>' + enc(rec.get('warehouse_name')) + '</b>' : '-');
+        fSupInfo.setValue(rec ? '<b>' + enc(rec.get('supplier_name') || '-') + '</b>' : '-');
+        fPoInfo.setValue(rec ? '<b>' + enc(rec.get('po_number')) + '</b> / ' + enc(rec.get('grn_no')) : '-');
     }
 
-    function addMaterial() {
-        var r = fMat.findRecord('material_id', fMat.getValue());
-        if (!r) { showErr('Pilih material terlebih dahulu.'); return; }
-        if (r.get('available') <= 0) { showErr('Stok tersedia kosong (sudah dicadangkan oleh klaim retur lain yang masih Diajukan).'); return; }
-        var R = itemDs.recordType;
-        itemDs.add(new R({
-            material_id: r.get('material_id'), material_code: r.get('material_code'), material_name: r.get('material_name'),
-            unit: r.get('unit'), available: r.get('available'), qty_claim: Math.min(1, r.get('available')),
-            defect_type: DEFECT_TYPES[0], defect_note: '', evidence_ref: ''
-        }));
-        fMat.clearValue();
+    // Muat item RCV + qty yang masih boleh diretur; cb dipanggil setelah selesai
+    function loadRcvItems(rcvId, cb) {
+        ajax({ action: 'rcv_items', rcv_id: rcvId, exclude_id: editId }, function (res) {
+            if (!res.success) { itemDs.removeAll(); showErr(res.message || 'Gagal memuat item RCV.'); return; }
+            itemDs.loadData(res);
+            var any = false;
+            itemDs.each(function (r) { if (r.get('available') > 0) any = true; });
+            if (!any) showErr('Semua item pada RCV ini sudah diretur / stok gudang kosong.');
+            if (cb) cb();
+        });
+    }
+
+    function onRcvSelected(rec) {
+        fillRcvInfo(rec);
+        itemDs.removeAll();
+        if (rec) loadRcvItems(rec.get('id'));
     }
 
     function showEditor(title) {
@@ -514,71 +471,73 @@ Ext.onReady(function () {
         if (!needAccess(ACCESS_ADD, 'Anda tidak memiliki hak akses untuk membuat retur.')) return;
         editId = 0;
         showEditor('Retur Pembelian Baru');
-        fProject.clearValue(); fSupplier.clearValue(); fWh.clearValue();
-        fDate.setValue(new Date()); fDo.setValue(''); fRemark.setValue(''); fMat.clearValue();
-        itemDs.removeAll(); whDs.removeAll(); poDs.removeAll(); fPo.setValue(0);
-        projectDs.load();
-        supplierDs.load();
+        fRcv.enable();
+        fRcv.clearValue();
+        fillRcvInfo(null);
+        fDate.setValue(new Date()); fDo.setValue(''); fRemark.setValue('');
+        itemDs.removeAll();
+        rcvDs.load();
     };
 
-    // EDIT = ubah retur Diajukan
+    // EDIT = ubah retur Diajukan (dokumen RCV tidak bisa diganti)
     document.getElementById('editData').onclick = function () {
         if (!dataRecord) { showErr('Pilih retur terlebih dahulu dari tabel.'); return; }
         if (dataRecord.status !== 'Diajukan') { showErr('Hanya retur berstatus Diajukan yang dapat diedit.'); return; }
+        if (!dataRecord.wh_receiving_hdr_id) { showErr('Retur ini tidak terhubung ke dokumen RCV, hanya bisa dibatalkan.'); return; }
         if (!needAccess(ACCESS_EDIT, 'Anda tidak memiliki hak akses untuk mengedit retur.')) return;
         var rec = dataRecord;
         editId = rec.id;
         showEditor('Edit Retur ' + rec.ref_no);
         itemDs.removeAll();
-        // muat master berantai, lalu pasang nilai header + detail
-        projectDs.load({ callback: function () {
-            supplierDs.load({ callback: function () {
-                whDs.load({ params: { project_id: rec.project_id }, callback: function () {
-                    poDs.load({ params: { project_id: rec.project_id, supplier_id: rec.supplier_id }, callback: function () {
-                        fProject.setValue(rec.project_id);
-                        fSupplier.setValue(rec.supplier_id);
-                        fWh.setValue(rec.warehouse_id);
-                        fPo.setValue(rec.po_id || 0);
-                        fDate.setValue(Date.parseDate(rec.return_date, 'Y-m-d') || new Date());
-                        fDo.setValue(rec.supplier_do_no || '');
-                        fRemark.setValue(rec.remark || '');
-                        fMat.clearValue();
-                        ajax({ action: 'detail', id: rec.id }, function (res) {
-                            if (!res.success) { showErr(res.message || 'Gagal memuat detail retur.'); return; }
-                            var R = itemDs.recordType;
-                            Ext.each(res.data, function (d) {
-                                itemDs.add(new R({
-                                    material_id: d.material_id, material_code: d.material_code, material_name: d.material_name,
-                                    unit: d.unit, available: null, qty_claim: parseFloat(d.qty_claim),
-                                    defect_type: d.defect_type, defect_note: d.defect_note || '', evidence_ref: d.evidence_ref || ''
-                                }));
-                            });
-                        });
-                    } });
-                } });
-            } });
+        rcvDs.load({ params: { query: rec.rcv_ref_no || '' }, callback: function () {
+            var rr = rcvDs.getById(rec.wh_receiving_hdr_id);
+            fRcv.setValue(rec.wh_receiving_hdr_id);
+            fRcv.disable();
+            fillRcvInfo(rr);
+            fDate.setValue(Date.parseDate(rec.return_date, 'Y-m-d') || new Date());
+            fDo.setValue(rec.supplier_do_no || '');
+            fRemark.setValue(rec.remark || '');
+            loadRcvItems(rec.wh_receiving_hdr_id, function () {
+                // pasang qty / jenis cacat tersimpan ke baris item RCV (baris tambahan bila satu material punya >1 baris)
+                ajax({ action: 'detail', id: rec.id }, function (res) {
+                    if (!res.success) { showErr(res.message || 'Gagal memuat detail retur.'); return; }
+                    var used = {};
+                    Ext.each(res.data, function (d) {
+                        var idx = itemDs.findBy(function (r) { return String(r.get('material_id')) === String(d.material_id) && !used[r.id]; });
+                        var row = idx >= 0 ? itemDs.getAt(idx) : null;
+                        if (!row) {
+                            var base = itemDs.getAt(itemDs.findBy(function (r) { return String(r.get('material_id')) === String(d.material_id); }));
+                            if (!base) return;
+                            row = new itemDs.recordType(Ext.apply({}, base.data));
+                            itemDs.add(row);
+                        }
+                        used[row.id] = true;
+                        row.set('qty_claim', parseFloat(d.qty_claim));
+                        row.set('defect_type', d.defect_type);
+                        row.set('defect_note', d.defect_note || '');
+                        row.set('evidence_ref', d.evidence_ref || '');
+                    });
+                });
+            });
         } });
     };
 
     // SAVE
     document.getElementById('saveEdit').onclick = function () {
-        if (!fProject.getValue() || !fWh.getValue() || !fSupplier.getValue() || !fDate.getValue()) {
-            showErr('Proyek, gudang, supplier, dan tanggal wajib diisi.'); return;
-        }
+        if (!fRcv.getValue() || !fDate.getValue()) { showErr('Dokumen RCV dan tanggal wajib diisi.'); return; }
         var arr = [], err = '';
         itemDs.each(function (r) {
             var q = parseFloat(r.get('qty_claim')) || 0;
-            if (q <= 0) { err = 'Qty retur ' + r.get('material_name') + ' harus lebih besar dari 0.'; return false; }
+            if (q <= 0) return;                                  // baris qty 0 = tidak diretur, diabaikan
             if (!r.get('defect_type')) { err = 'Jenis cacat ' + r.get('material_name') + ' wajib dipilih.'; return false; }
             arr.push({ material_id: r.get('material_id'), qty_claim: q, defect_type: r.get('defect_type'),
                        defect_note: r.get('defect_note') || '', evidence_ref: r.get('evidence_ref') || '' });
         });
         if (err) { showErr(err); return; }
-        if (!arr.length) { showErr('Tambahkan minimal satu material.'); return; }
+        if (!arr.length) { showErr('Isi qty retur minimal untuk satu material.'); return; }
 
         ajax({
-            action: 'save', id: editId, project_id: fProject.getValue(), warehouse_id: fWh.getValue(),
-            supplier_id: fSupplier.getValue(), po_id: fPo.getValue() || 0,
+            action: 'save', id: editId, rcv_id: fRcv.getValue(),
             return_date: fDate.getValue().format('Y-m-d'), supplier_do_no: fDo.getValue(), remark: fRemark.getValue(),
             details: Ext.util.JSON.encode(arr)      // detail bertingkat -> JSON via POST
         }, function (res) {
@@ -616,6 +575,4 @@ Ext.onReady(function () {
     var addWdwInit = document.getElementById('addWdw');
     if (addWdwInit) addWdwInit.style.display = 'none';
 
-    projectDs.load();
-    supplierDs.load();
 });
