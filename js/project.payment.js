@@ -478,35 +478,51 @@ Ext.onReady(function () {
             }
         });
 
+        // REMARK (FIX): window sebelumnya layout 'fit' tanpa tinggi -> body menciut & tombol bawaan tema gelap tak terbaca.
+        // Sekarang: tinggi tetap, label berwarna terang, tombol HTML biasa (gaya sama dengan tombol editor).
+        var lblStyle = 'color:#9fc3d1;';
+        var btnCss = 'margin-left:8px; padding:7px 18px; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold;';
         var win = new Ext.Window({
             title: 'Tambah Termin - ' + (prj ? prj.get('name') : ''),
-            width: 430, modal: true, closeAction: 'close', layout: 'fit',
+            width: 460, height: 320, modal: true, closeAction: 'close', resizable: false,
+            layout: 'fit',
+            bodyStyle: 'background:#0f1d29;',
             items: [new Ext.form.FormPanel({
-                border: false, labelWidth: 110, bodyStyle: 'padding:12px;',
+                border: false, labelWidth: 120, labelStyle: lblStyle, autoScroll: true,
+                bodyStyle: 'background:#0f1d29; padding:14px;',
+                defaults: { labelStyle: lblStyle },
                 items: [
                     tName, tDate, tPct, tAmt,
-                    new Ext.form.DisplayField({ hideLabel: true, value: '<span style="color:#668894;">Nilai kontrak: ' + fmtAmt(contract) + '. Isi persentase untuk menghitung nilai otomatis.</span>' })
+                    new Ext.form.DisplayField({ hideLabel: true, value: '<span style="color:#9fc3d1;">Nilai kontrak: <b>' + fmtAmt(contract) + '</b>. ' +
+                        (contract > 0 ? 'Isi persentase untuk menghitung nilai otomatis.' : 'Nilai kontrak proyek masih 0, isi nilai termin manual.') + '</span>' }),
+                    {
+                        xtype: 'panel', border: false, bodyStyle: 'background:transparent; text-align:right; padding-top:10px;',
+                        html: '<button type="button" id="ppTerminSave" style="' + btnCss + 'background:#03615e;">Simpan</button>' +
+                              '<button type="button" id="ppTerminCancel" style="' + btnCss + 'background:#555555;">Batal</button>',
+                        listeners: {
+                            afterrender: function () {
+                                document.getElementById('ppTerminCancel').onclick = function () { win.close(); };
+                                document.getElementById('ppTerminSave').onclick = function () {
+                                    if (!tName.getValue()) { Ext.Msg.alert('Peringatan', 'Nama termin wajib diisi.'); return; }
+                                    if (!tDate.getValue()) { Ext.Msg.alert('Peringatan', 'Tanggal termin wajib diisi.'); return; }
+                                    if (!((parseFloat(tAmt.getValue()) || 0) > 0)) { Ext.Msg.alert('Peringatan', 'Nilai termin harus lebih dari 0.'); return; }
+                                    ajax({
+                                        task: 'save_termin',
+                                        project_id: pid,
+                                        termin_name: tName.getValue(),
+                                        invoice_date: tDate.getValue().format('Y-m-d'),
+                                        percentage: (parseFloat(tPct.getValue()) || 0) > 0 ? tPct.getValue() : '',
+                                        amount: tAmt.getValue()
+                                    }, function (res) {
+                                        Ext.Msg.alert(res.success ? 'Sukses' : 'Gagal', res.message || '');
+                                        if (res.success) { win.close(); loadOutstanding(pid); }
+                                    });
+                                };
+                            }
+                        }
+                    }
                 ]
-            })],
-            buttons: [{
-                text: 'Simpan',
-                handler: function () {
-                    if (!tName.getValue()) { Ext.Msg.alert('Peringatan', 'Nama termin wajib diisi.'); return; }
-                    if (!tDate.getValue()) { Ext.Msg.alert('Peringatan', 'Tanggal termin wajib diisi.'); return; }
-                    if (!((parseFloat(tAmt.getValue()) || 0) > 0)) { Ext.Msg.alert('Peringatan', 'Nilai termin harus lebih dari 0.'); return; }
-                    ajax({
-                        task: 'save_termin',
-                        project_id: pid,
-                        termin_name: tName.getValue(),
-                        invoice_date: tDate.getValue().format('Y-m-d'),
-                        percentage: (parseFloat(tPct.getValue()) || 0) > 0 ? tPct.getValue() : '',
-                        amount: tAmt.getValue()
-                    }, function (res) {
-                        Ext.Msg.alert(res.success ? 'Sukses' : 'Gagal', res.message || '');
-                        if (res.success) { win.close(); loadOutstanding(pid); }
-                    });
-                }
-            }, { text: 'Batal', handler: function () { win.close(); } }]
+            })]
         });
         win.show();
     }
