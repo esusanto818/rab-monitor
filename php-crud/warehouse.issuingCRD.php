@@ -2,12 +2,18 @@
 /**
  * warehouse.issuingCRD.php — Warehouse Issuing (material out ke proyek)
  *
- * Aturan issue per material (NEW):
- *   1. Material harus sudah di-RCV di gudang proyek (stok W/H > 0).
+ * Aturan issue per material:
+ *   1. Material harus sudah di-RCV di gudang (stok W/H > 0).
  *   2. qty issue <= stok di W/H.
  *   3. Total issue proyek (posted) + qty ini <= RAB qty_plan x (1 + 5%).
  *      Bila melewati qty RAB tapi masih dalam +5% -> is_overbudget = true (allowance terpakai).
  *   Nilai issue = FIFO dari layer RCV (stock_movements IN).
+ *
+ * [CHANGED] Gudang utama dipakai bersama (sama seperti modul Retur Pembelian):
+ *           - lookup_warehouses : semua gudang aktif yang MASIH ADA material (stok > 0),
+ *             tidak lagi dibatasi warehouses.project_id.
+ *           - save              : validasi "gudang terdaftar untuk proyek" dinonaktifkan.
+ *           Kuota RAB +5% tetap dihitung per proyek.
  *
  * Action: list | detail | lookup_projects | lookup_warehouses | lookup_materials | save | reverse
  */
@@ -50,7 +56,7 @@ function IssRabInfo($projectId, $materialId) {
     $iss = WhRow("SELECT COALESCE(SUM(i.qty_out),0) AS q
                   FROM material_out_items i JOIN material_out_header h ON h.id=i.material_out_id
                   WHERE h.project_id=$1 AND i.material_id=$2 AND h.status='posted'
-                    AND h.issue_type='PROJECT'", // [CHANGED] issue retur supplier tidak memakan kuota RAB
+                    AND h.issue_type='PROJECT'", // issue retur supplier tidak memakan kuota RAB
                  array((int)$projectId, (int)$materialId));
     return array('rab_qty' => round((float)$rab['q'], 4), 'issued' => round((float)$iss['q'], 4));
 }
@@ -109,11 +115,22 @@ function IssLookupProjects() {
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
 }
 
-// Hanya gudang milik proyek tsb (material proyek = stok di gudang proyek)
+// [CHANGED] Hanya gudang yang MASIH ADA material (stok > 0); tidak lagi dibatasi warehouses.project_id
+//           (gudang utama dipakai bersama, sama seperti modul Retur Pembelian).
+//           Gudang milik proyek terpilih diurutkan paling atas; nama diberi jumlah material berstok.
 function IssLookupWarehouses() {
     $pid = (int)WhReq('project_id');
-    $rows = WhRows("SELECT id, code, name FROM warehouses
-                    WHERE active=true AND project_id=$1 ORDER BY name", array($pid));
+    $rows = WhRows("SELECT w.id, w.code,
+                           (w.name || ' (' || oh.item_count || ' material)') AS name
+                    FROM warehouses w
+                    JOIN (SELECT warehouse_id, COUNT(*) AS item_count
+                          FROM (SELECT warehouse_id, item_id
+                                FROM stock_movements
+                                GROUP BY warehouse_id, item_id
+                                HAVING SUM(CASE WHEN movement_type='IN' THEN qty ELSE -qty END) > 0) x
+                          GROUP BY warehouse_id) oh ON oh.warehouse_id = w.id
+                    WHERE w.active = true
+                    ORDER BY (w.project_id = $1) DESC NULLS LAST, w.name", array($pid));
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
 }
 
@@ -166,7 +183,8 @@ function IssSave() {
 
     $wh = WhRow('SELECT id, project_id, active FROM warehouses WHERE id=$1', array($whId));
     if (!$wh || !WhBool($wh['active'])) { throw new WhException('Gudang tidak ditemukan / tidak aktif.'); }
-    if ((int)$wh['project_id'] !== $projectId) { throw new WhException('Gudang tidak terdaftar untuk proyek ini.'); }
+    // [CHANGED] gudang utama dipakai bersama -> validasi kepemilikan proyek dinonaktifkan
+    // if ((int)$wh['project_id'] !== $projectId) { throw new WhException('Gudang tidak terdaftar untuk proyek ini.'); }
 
     // Validasi & gabung baris duplikat per material
     $lines = array();
@@ -237,7 +255,7 @@ function IssReverse() {
     $h = WhRow('SELECT id, status, issue_type FROM material_out_header WHERE id=$1 FOR UPDATE', array($id));
     if (!$h) { throw new WhException('Dokumen tidak ditemukan.'); }
     if ($h['status'] !== 'posted') { throw new WhException('Hanya dokumen berstatus posted yang dapat di-reverse.'); }
-    // [CHANGED] issue retur supplier harus dibatalkan lewat Retur Supplier (Batal Kirim) agar status klaim ikut konsisten
+    // issue retur supplier harus dibatalkan lewat Retur Supplier (Batal Kirim) agar status klaim ikut konsisten
     if ($h['issue_type'] !== 'PROJECT') { throw new WhException('Dokumen ini adalah issue Retur Supplier. Gunakan Batal Kirim di modul Retur Supplier.'); }
     WhQ("UPDATE material_out_header SET status='reversed', reversed_at=now(), reversed_by=$2 WHERE id=$1",
         array($id, WhUserId()));
