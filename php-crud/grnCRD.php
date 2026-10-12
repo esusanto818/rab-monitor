@@ -1,10 +1,10 @@
 <?php
 /**
- * grn00CRD.php
+ * grnCRD.php
  * ============================================================
- * Backend untuk grn00.js (Proses GRN tanpa Simpan Warehouse).
+ * Backend untuk grn.js (Proses GRN tanpa Simpan Warehouse).
  * Kontrak task: list_po_open, read_po_items, read, 
- *               read_grn_items, read_edit, read_grn_print, create, update, delete
+ *               read_grn_items, read_edit, create, update, delete
  *
  * MULTI CURRENCY (sql/2026-10-01.grn_currency.sql):
  *  - GRN membekukan mata uang & kurs PO (grn_hdr.currency_id / exch_rate).
@@ -12,11 +12,6 @@
  *  - grn_dtl.unit_cost_base = unit_cost x kurs PO = MATA UANG DASAR (dihitung server, bukan dari klien);
  *    inilah yang dipakai WH Rcv untuk FIFO, stok, dan jurnal.
  *  - GRN hanya boleh dibuat dari PO berstatus Disetujui (GRN_PO_STATUS_LIST). PO Draft/Diajukan/Dibatalkan ditolak.
- *
- * [NEW 2026-10-08] KENDARAAN & DRIVER (sql/2026-10-08.grn_vehicle_driver.sql):
- *  - grn_hdr.vehicle_plate_no (varchar 20) & grn_hdr.driver_name (varchar 100), opsional.
- *  - Dinormalisasi server (plat = huruf besar, spasi dirapikan) di GrnCleanVehicle().
- *  - Task baru 'read_grn_print': data header + item untuk cetak Tanda Terima GRN (tanpa harga).
  * ============================================================
  */
 
@@ -27,7 +22,6 @@ session_start();
 header('Content-Type: application/json');
 
 const GRN_PO_STATUS_LIST = ['Disetujui'];     // status PO yang boleh di-GRN
-const GRN_REQUIRE_VEHICLE = false;            // [NEW] true = plat no & nama driver wajib diisi saat simpan GRN
 
 $task = $_REQUEST['task'] ?? '';
 $db = new crud();
@@ -50,12 +44,6 @@ function GrnBaseCode() {
     return 'IDR';
 }
 
-/** Menetapkan variabel sesi PostgreSQL untuk pencatatan log audit/trigger */
-/*function SetPgAppUser() {
-    $username = $_SESSION['username'] ?? $_SESSION['login_name'] ?? 'system';
-    $res = pg_query_params("SELECT set_config('app.username', $1, true)", [$username]);
-    PgOrFail($res, 'Gagal menetapkan app.username PostgreSQL');
-}*/
 /** Info mata uang untuk tampilan: dari snapshot GRN bila $grn_id > 0, selain itu dari PO. */
 function GrnCurrencyInfo($po_id, $grn_id) {
     if ($grn_id > 0) {
@@ -177,9 +165,7 @@ try {
             break;
 
         case 'read':
-            // [CHG] tambah g.vehicle_plate_no, g.driver_name untuk kolom grid & panel detail
             $sql = "SELECT g.id, g.ref_no, g.grn_date, g.status, g.remark,
-                           g.vehicle_plate_no, g.driver_name,
                            p.po_number AS po_ref_no, g.po_id, s.id AS supplier_id, s.name AS supplier_name,
                            (SELECT COALESCE(SUM(qty_received),0) FROM grn_dtl d WHERE d.grn_hdr_id = g.id) AS total_qty,
                            (SELECT COALESCE(SUM(qty_received * unit_cost),0) FROM grn_dtl d WHERE d.grn_hdr_id = g.id) AS total_amount,
@@ -207,59 +193,12 @@ try {
             break;
 
         case 'read_edit':
-            // SELECT * -> kolom vehicle_plate_no & driver_name otomatis ikut terisi ke form (name field sama)
             $id = (int)($_REQUEST['id'] ?? 0);
             $hdrResult = pg_query_params("SELECT * FROM grn_hdr WHERE id = $1", [$id]);
             PgOrFail($hdrResult, 'Gagal load GRN');
             $hdr = pg_fetch_assoc($hdrResult);
             if (!$hdr) throw new Exception('Data tidak ditemukan');
             echo json_encode(['success' => true, 'data' => $hdr]);
-            break;
-
-        case 'read_grn_print':
-            // [NEW] Data Tanda Terima GRN. Sengaja TANPA harga (dokumen untuk driver/supplier).
-            $grn_id = (int)($_REQUEST['grn_id'] ?? 0);
-            if (!$grn_id) throw new Exception('GRN tidak valid');
-
-            $hRes = pg_query_params(
-                "SELECT g.id, g.ref_no, g.grn_date, g.status, g.remark,
-                        g.vehicle_plate_no, g.driver_name,
-                        p.po_number AS po_ref_no, p.po_date AS po_date,
-                        pr.name AS project_name,
-                        s.name AS supplier_name,
-                        COALESCE(e.employee_name, u.login_name) AS created_by_name
-                   FROM grn_hdr g
-                   LEFT JOIN purchase_orders p ON p.id = g.po_id
-                   LEFT JOIN projects pr ON pr.id = p.project_id
-                   LEFT JOIN m_suppliers s ON s.id = g.supplier_id
-                   LEFT JOIN m_user_system u ON u.id = g.created_by
-                   LEFT JOIN m_employee e ON e.id = u.employee_id
-                  WHERE g.id = $1",
-                [$grn_id]
-            );
-            PgOrFail($hRes, 'Gagal load header cetak GRN');
-            $hdr = pg_fetch_assoc($hRes);
-            if (!$hdr) throw new Exception('GRN tidak ditemukan');
-
-            // qty_cum = akumulasi diterima untuk baris PO tsb s/d GRN ini (GRN dengan id <= id ini)
-            $dRes = pg_query_params(
-                "SELECT d.id, d.item_name, m.material_code,
-                        COALESCE(NULLIF(pi.unit,''), '') AS unit,
-                        COALESCE(pi.qty, 0) AS qty_po,
-                        d.qty_received AS qty,
-                        (SELECT COALESCE(SUM(x.qty_received),0) FROM grn_dtl x
-                          WHERE x.po_item_id = d.po_item_id AND x.grn_hdr_id <= d.grn_hdr_id) AS qty_cum,
-                        d.remark
-                   FROM grn_dtl d
-                   LEFT JOIN po_items pi ON pi.id = d.po_item_id
-                   LEFT JOIN materials m ON m.id = d.item_id
-                  WHERE d.grn_hdr_id = $1
-                  ORDER BY d.id",
-                [$grn_id]
-            );
-            PgOrFail($dRes, 'Gagal load item cetak GRN');
-
-            echo json_encode(['success' => true, 'data' => ['header' => $hdr, 'items' => pg_fetch_all($dRes) ?: []]]);
             break;
 
         case 'create':
@@ -269,8 +208,6 @@ try {
             $remark      = $_REQUEST['remark'] ?? null;
             $arrItems    = json_decode($_REQUEST['arrItems'] ?? '[]', true);
             $created_by  = $_SESSION['user_id'] ?? null;
-            // [NEW] plat no kendaraan & nama driver (dinormalisasi / divalidasi)
-            $veh         = GrnCleanVehicle($_REQUEST['vehicle_plate_no'] ?? '', $_REQUEST['driver_name'] ?? '');
 
             if (!$po_id) throw new Exception('PO belum dipilih');
 
@@ -298,16 +235,13 @@ try {
             $po_rate     = (float)$poRow['exch_rate'];
 
             pg_query('BEGIN');
-            SetPgAppUser();
+
             $ref_no = CreateRefNo('grn_hdr', 'ref_no', 'GRN');
 
-            // [CHG] INSERT + vehicle_plate_no ($9), driver_name ($10)
             $hdrResult = pg_query_params(
-                "INSERT INTO grn_hdr (ref_no, grn_date, po_id, supplier_id, status, remark, created_by, created_at, currency_id, exch_rate,
-                                      vehicle_plate_no, driver_name)
-                 VALUES ($1,$2,$3,$4,'open',$5,$6,NOW(),$7,$8,$9,$10) RETURNING id",
-                [$ref_no, $grn_date, $po_id, $supplier_id, $remark, $created_by, $po_currency, $po_rate,
-                 $veh['plate'], $veh['driver']]
+                "INSERT INTO grn_hdr (ref_no, grn_date, po_id, supplier_id, status, remark, created_by, created_at, currency_id, exch_rate)
+                 VALUES ($1,$2,$3,$4,'open',$5,$6,NOW(),$7,$8) RETURNING id",
+                [$ref_no, $grn_date, $po_id, $supplier_id, $remark, $created_by, $po_currency, $po_rate]
             );
             PgOrFail($hdrResult, 'Gagal insert grn_hdr');
             $grn_hdr_id = pg_fetch_result($hdrResult, 0, 'id');
@@ -325,8 +259,6 @@ try {
             $grn_date    = $_REQUEST['grn_date'] ?? date('Y-m-d');
             $remark      = $_REQUEST['remark'] ?? null;
             $arrItems    = json_decode($_REQUEST['arrItems'] ?? '[]', true);
-            // [NEW] plat no kendaraan & nama driver
-            $veh         = GrnCleanVehicle($_REQUEST['vehicle_plate_no'] ?? '', $_REQUEST['driver_name'] ?? '');
 
             if (!$id) throw new Exception('GRN tidak valid');
 
@@ -347,19 +279,15 @@ try {
             $grn_rate = (float)$hRow['exch_rate'];                       // kurs snapshot GRN tidak berubah saat edit
 
             pg_query('BEGIN');
-            SetPgAppUser();
 
             GuardNoWhReceiving($id, 'diedit');
 
             $delResult = pg_query_params("DELETE FROM grn_dtl WHERE grn_hdr_id = $1", [$id]);
             PgOrFail($delResult, 'Gagal hapus baris lama grn_dtl');
 
-            // [CHG] UPDATE + vehicle_plate_no ($5), driver_name ($6); id jadi $7
             $upd = pg_query_params(
-                "UPDATE grn_hdr SET supplier_id = $1, grn_date = $2, remark = $3,
-                        vehicle_plate_no = $4, driver_name = $5
-                  WHERE id = $6",
-                [$supplier_id, $grn_date, $remark, $veh['plate'], $veh['driver'], $id]
+                "UPDATE grn_hdr SET supplier_id = $1, grn_date = $2, remark = $3 WHERE id = $4",
+                [$supplier_id, $grn_date, $remark, $id]
             );
             PgOrFail($upd, 'Gagal update grn_hdr');
 
@@ -374,7 +302,6 @@ try {
             if (!$id) throw new Exception('GRN tidak valid');
 
             pg_query('BEGIN');
-            SetPgAppUser();
 
             GuardNoWhReceiving($id, 'dihapus');
 
@@ -394,33 +321,6 @@ try {
 } catch (Exception $e) {
     @pg_query('ROLLBACK');
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-}
-
-/**
- * [NEW] Normalisasi & validasi Plat No. Kendaraan + Nama Driver.
- *  - Plat: huruf besar, spasi ganda dirapikan, hanya huruf/angka/spasi/strip, maks 20 karakter.
- *  - Driver: spasi dirapikan, maks 100 karakter.
- *  - Kosong disimpan NULL, kecuali GRN_REQUIRE_VEHICLE = true (maka wajib diisi).
- * @return array ['plate' => string|null, 'driver' => string|null]
- */
-function GrnCleanVehicle($plate, $driver) {
-    $plate  = strtoupper(trim(preg_replace('/\s+/', ' ', (string)$plate)));
-    $driver = trim(preg_replace('/\s+/', ' ', (string)$driver));
-
-    if (GRN_REQUIRE_VEHICLE) {
-        if ($plate === '')  throw new Exception('Plat No. Kendaraan wajib diisi.');
-        if ($driver === '') throw new Exception('Nama Driver wajib diisi.');
-    }
-    if ($plate !== '') {
-        if (strlen($plate) > 20) throw new Exception('Plat No. Kendaraan maksimal 20 karakter.');
-        if (!preg_match('/^[A-Z0-9 \-]+$/', $plate)) throw new Exception('Plat No. Kendaraan hanya boleh huruf, angka, spasi, dan strip (-).');
-    }
-    // [FIX 2026-10-09] mb_strlen() tidak tersedia (ekstensi mbstring belum terpasang di server) -> Fatal error.
-    // Pakai mb_strlen hanya bila ada; fallback ke hitung karakter UTF-8 via preg_match_all('/./u').
-    $drvLen = function_exists('mb_strlen') ? mb_strlen($driver, 'UTF-8') : preg_match_all('/./us', $driver);
-    if ($driver !== '' && $drvLen > 100) throw new Exception('Nama Driver maksimal 100 karakter.');
-
-    return ['plate' => ($plate === '' ? null : $plate), 'driver' => ($driver === '' ? null : $driver)];
 }
 
 function InsertGrnItems($grn_hdr_id, $arrItems, $exclude_grn_hdr_id, $rate = 1.0) {

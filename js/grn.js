@@ -1,424 +1,397 @@
-/* Document      : purchaseinvoice.js 
-   Description   : Complete Purchase Invoice JS - Fixed Main Grid Loading & Auto Default Matched
-   [BARU 2026-10-08] Tombol "Cetak Tanda Terima" di panel detail (task backend: read_invoice_print) */
+/*
+  Document      : grn00_5.js
+  Description   : Purchase GRN (Goods Receipt Note) - ExtJS 3.x Frontend Controller
+  Backend       : /inv/php-crud/grnCRD.php
+  Multi currency: GRN membekukan mata uang & kurs PO. Harga satuan GRN dalam mata uang PO (bisa diedit);
+                  nilai dalam mata uang dasar (= harga x kurs PO) dihitung server dan dipakai WH Rcv.
+                  GRN hanya bisa dibuat dari PO berstatus Disetujui.
+*/
 
 Ext.onReady(function () {
     Ext.QuickTips.init();
-
-    // [BARU] Hilangkan background warna default toolbar khusus untuk grid
-    // editor detail invoice ini saja (scoped ke #editorFormGrid supaya
-    // tidak mempengaruhi toolbar grid lain di halaman lain).
-    Ext.util.CSS.createStyleSheet(
-        '#editorFormGrid .x-toolbar, #editorFormGrid .x-toolbar td, #editorFormGrid .x-toolbar tr { ' +
-        'background: transparent !important; background-image: none !important; border: none !important; }',
-        'invoice-grid-tbar-transparent'
-    );
+    document.getElementById("mainHeaderText").innerHTML = "Goods Receipt Note";
 
     var task = '';
     var dataRecord = null;
+    var grnCur = { code: 'IDR', base: 'IDR', rate: 1 };      // mata uang GRN yang sedang dilihat/diedit
+
+    function getFormAccess() {
+        return (typeof formAccess !== 'undefined') ? formAccess : (window.formAccess || 0);
+    }
 
     // ------------------------------------------------------------
-    // 1. Data Store Main Grid
+    // 0. Container Detail Item GRN
     // ------------------------------------------------------------
-    var invoiceFields = [
-        { name: 'id' },
-        { name: 'inv_no' },
-        { name: 'supplier_invoice_no' },
-        { name: 'invoice_date' },
-        { name: 'supplier_id' },
-        { name: 'supplier_name' },
-        { name: 'status' },
-        { name: 'remark' },
-        { name: 'total_amount', type: 'float' },
-        { name: 'paid_amount', type: 'float' }
+    var gridContainer = document.getElementById('divMainGrid');
+
+    var grnDtlDiv = document.createElement('div');
+    grnDtlDiv.id = 'grnDtlContainer';
+    grnDtlDiv.className = 'detail-panel-container';
+    grnDtlDiv.style.display = 'none';
+
+    if (gridContainer && gridContainer.parentNode) {
+        gridContainer.parentNode.insertBefore(grnDtlDiv, gridContainer.nextSibling);
+    }
+
+    (function injectExtraUI() {
+        var gridEditorContainer = document.getElementById('editorFormGrid');
+        if (gridEditorContainer && !document.getElementById('lblGrnTotal')) {
+            var totalsDiv = document.createElement('div');
+            totalsDiv.className = 'invoice-totals';
+            totalsDiv.style.cssText = 'padding:8px 0; font-weight:bold; font-size:14px; color:#fff; text-align:right;';
+            totalsDiv.innerHTML = 'Total Nilai GRN: <span id="lblGrnTotal">0.00</span>';
+            gridEditorContainer.parentNode.insertBefore(totalsDiv, gridEditorContainer.nextSibling);
+        }
+    })();
+
+    // ------------------------------------------------------------
+    // 1. Fields & Stores
+    // ------------------------------------------------------------
+    var grnField = [
+        { name: 'id' }, { name: 'ref_no' }, { name: 'grn_date', type: 'date', dateFormat: 'Y-m-d' },
+        { name: 'po_id' }, { name: 'po_ref_no' }, { name: 'supplier_id' }, { name: 'supplier_name' },
+        { name: 'status' }, { name: 'remark' },
+        { name: 'total_qty', type: 'float' }, { name: 'total_amount', type: 'float' },
+        { name: 'currency_code' }, { name: 'exch_rate', type: 'float' }, { name: 'total_base', type: 'float' }
     ];
 
-    var mainDs = new Ext.data.Store({
-        url: 'php-crud/purchaseinvoiceCRD.php',
-        idProperty: 'id',
-        baseParams: { task: 'read' },
-        reader: new Ext.data.JsonReader({ root: 'data', totalProperty: 'totalCount' }, invoiceFields),
+    var itemField = [
+        { name: 'po_dtl_id' }, { name: 'item_id' }, { name: 'item_name' },
+        { name: 'qty_ordered', type: 'float' }, { name: 'unit_price', type: 'float' },
+        { name: 'qty_received', type: 'float' },
+        { name: 'sisa_qty_po', type: 'float' },
+        { name: 'qty_max_allowed', type: 'float' },
+        { name: 'qty_receivable_max', type: 'float' },
+        { name: 'qty_received_this_grn', type: 'float' },
+        { name: 'unit_cost_this_grn', type: 'float' },
+        { name: 'qty_input', type: 'float' },
+        { name: 'unit_cost', type: 'float' }
+    ];
+
+    var poField = [{ name: 'id' }, { name: 'ref_no' }, { name: 'supplier_id' }, { name: 'supplier_name' },
+                   { name: 'currency_code' }, { name: 'exch_rate', type: 'float' }];
+    var poDs = new Ext.data.Store({
+        url: '../php-crud/grnCRD.php',
+        baseParams: { task: 'list_po_open' },
+        reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, poField)
+    });
+    poDs.load();
+
+    var itemGridDs = new Ext.data.Store({
+        url: '../php-crud/grnCRD.php',
+        baseParams: { task: 'read_po_items' },
+        reader: new Ext.data.JsonReader({ root: 'data', totalProperty: 'totalCount' }, itemField),
         listeners: {
-            // [PERBAIKAN] Tambahkan listener exception/load untuk debugging jika grid kosong
-            exception: function(proxy, type, action, options, response, arg) {
-                try {
-                    var res = Ext.util.JSON.decode(response.responseText);
-                    Ext.Msg.alert('Error Data', res.message || 'Gagal memuat data main grid.');
-                } catch(e) {
-                    console.error('Response error:', response.responseText);
+            load: function (store) {
+                var cu = store.reader.jsonData && store.reader.jsonData.currency;
+                if (cu) {
+                    grnCur = { code: cu.code || 'IDR', base: cu.base_code || 'IDR', rate: parseFloat(cu.exch_rate) || 1 };
+                    applyCurrencyHeaders();
                 }
+                store.each(function (r) {
+                    var existingQty = parseFloat(r.get('qty_received_this_grn')) || 0;
+                    if (existingQty > 0 && task === 'update') {
+                        r.set('qty_input', existingQty);
+                    } else {
+                        var defaultQty = parseFloat(r.get('sisa_qty_po')) || 0;
+                        r.set('qty_input', defaultQty);
+                    }
+
+                    var existingCost = r.get('unit_cost_this_grn');
+                    var poUnitPrice = parseFloat(r.get('unit_price')) || 0;
+                    r.set('unit_cost', (existingCost !== null && existingCost !== undefined && existingCost !== '') ? existingCost : poUnitPrice);
+                });
+                updateGrnTotalLabel();
             }
         }
     });
 
-    // Store Supplier untuk ComboBox Form Editor
-    var supplierDs = new Ext.data.Store({
-        url: 'php-crud/purchaseinvoiceCRD.php',
-        baseParams: { task: 'read_supplier' },
-        reader: new Ext.data.JsonReader({ root: 'data' }, [
-            { name: 'id' },
-            { name: 'name' }
-        ])
+    var mainDs = new Ext.data.Store({
+        url: '../php-crud/grnCRD.php',
+        idProperty: 'id',
+        baseParams: { task: 'read' },
+        reader: new Ext.data.JsonReader({ root: 'data', totalProperty: 'totalCount' }, grnField)
     });
-
-    // ------------------------------------------------------------
-    // 2. Main Grid Panel (Tanpa bbar / Paging Toolbar)
-    // ------------------------------------------------------------
-    var elGridDiv = document.getElementById('divMainGrid');
-    var calcHeight = 380;
-    if (elGridDiv && elGridDiv.offsetHeight > 100) {
-        calcHeight = elGridDiv.offsetHeight;
-    }
-
-    var gridMain = new Ext.grid.GridPanel({
-        renderTo: 'divMainGrid',
-        store: mainDs,
-        height: calcHeight,
-        stripeRows: true,
-        loadMask: true,
-        viewConfig: {
-            forceFit: true,
-            emptyText: '<div style="padding:20px; text-align:center; color:#94a3b8;">Tidak ada data untuk ditampilkan.</div>' // [PERBAIKAN] Pesan jika data kosong
-        },
-        columns: [
-            { header: 'No. Invoice Internal', dataIndex: 'inv_no', sortable: true },
-            { header: 'No. Supp. Invoice', dataIndex: 'supplier_invoice_no', sortable: true },
-            { header: 'Tgl Invoice', dataIndex: 'invoice_date', sortable: true },
-            { header: 'Supplier', dataIndex: 'supplier_name', sortable: true },
-            { 
-                header: 'Total Nilai (Rp)', 
-                dataIndex: 'total_amount', 
-                align: 'right',
-                renderer: function (v) {
-                    return Ext.util.Format.number(v || 0, '0,000.00');
-                }
-            },
-            { header: 'Status', dataIndex: 'status', align: 'center' },
-            { header: 'Keterangan', dataIndex: 'remark' }
-        ]
-    });
-
     mainDs.load();
 
     // ------------------------------------------------------------
-    // 3. Container Panel Detail Bawah (Main View)
+    // 2. Main Grid
     // ------------------------------------------------------------
-    var payDtlDiv = document.createElement('div');
-    payDtlDiv.id = 'payDtlContainer';
-    payDtlDiv.className = 'detail-panel-container';
-    payDtlDiv.style.display = 'none';
+    var GridDtlHeight = (maxGridHeight(document.getElementById('divMainGrid')));
+    var mainHeight = Math.round(GridDtlHeight - (GridDtlHeight * 0.45));
 
-    if (elGridDiv && elGridDiv.parentNode) {
-        elGridDiv.parentNode.insertBefore(payDtlDiv, elGridDiv.nextSibling);
-    }
-
-    function loadInvoiceDetailPanel(invoiceId, invoiceNo, supplierId) {
-        if (!invoiceId) return;
-
-        Ext.Ajax.request({
-            url: 'php-crud/purchaseinvoiceCRD.php',
-            method: 'POST',
-            params: { 
-                task: 'read_invoice_detail', 
-                invoice_id: invoiceId,
-                supplier_id: supplierId || 0
+    var gridMain = new stdGrid({
+        store: mainDs,
+        renderTo: 'divMainGrid',
+        height: mainHeight,
+        columns: [
+            { header: 'No. GRN', dataIndex: 'ref_no', width: 110, renderer: CellWrap },
+            { header: 'Tanggal', dataIndex: 'grn_date', width: 90, renderer: Ext.util.Format.dateRenderer('d M Y') },
+            { header: 'No. PO', dataIndex: 'po_ref_no', width: 110, renderer: CellWrap },
+            { header: 'Supplier', dataIndex: 'supplier_name', width: 170, renderer: CellWrap },
+            {
+                header: 'Total Qty', dataIndex: 'total_qty', width: 100, align: 'right',
+                renderer: function (v) { return Ext.util.Format.number(v || 0, '0,000.0000'); }
             },
-            success: function (response) {
-                try {
-                    var res = Ext.util.JSON.decode(response.responseText);
-                    if (!res.success) {
-                        payDtlDiv.innerHTML = '<div style="color:red; padding:10px;">Gagal memuat detail invoice.</div>';
-                        payDtlDiv.style.display = 'block';
-                        return;
-                    }
-                    renderInvoiceDetailPanel(res.data || [], invoiceNo, invoiceId);   // [CHG] + invoiceId untuk tombol cetak
-                } catch (e) {
-                    payDtlDiv.innerHTML = '<div style="color:red; padding:10px;">Error parsing data dari server.</div>';
-                    payDtlDiv.style.display = 'block';
+            { header: 'Mata Uang', dataIndex: 'currency_code', width: 80, align: 'center', renderer: function (v) { return v || '-'; } },
+            {
+                header: 'Total Nilai (Mata Uang PO)', dataIndex: 'total_amount', width: 150, align: 'right',
+                renderer: function (v) { return '<b>' + Ext.util.Format.number(v || 0, '0,000.00') + '</b>'; }
+            },
+            {
+                header: 'Total Nilai (Dasar)', dataIndex: 'total_base', width: 140, align: 'right',
+                renderer: function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); }
+            },
+            {
+                header: 'Status', dataIndex: 'status', width: 110, align: 'center',
+                renderer: function (v) {
+                    if (v === 'draft') return '<span style="color:#e08e0b;font-weight:bold;">Draft</span>';
+                    if (v === 'cancelled') return '<span style="color:#c0392b;font-weight:bold;">Cancelled</span>';
+                    return '<span style="color:#2e9e4f;font-weight:bold;">Confirmed</span>';
                 }
             },
-            failure: function () {
-                payDtlDiv.innerHTML = '<div style="color:red; padding:10px;">Gagal terhubung ke server backend.</div>';
-                payDtlDiv.style.display = 'block';
+            { header: 'Keterangan', dataIndex: 'remark', width: 160, renderer: CellWrap }
+        ],
+        listeners: {
+            cellclick: function (grid, rowIndex) {
+                var rec = grid.getStore().getAt(rowIndex);
+                if (rec) {
+                    dataRecord = rec.data;
+                    mainBtnEnable('#deleteData');
+                    editDataEnable();
+                    loadGrnDetail(dataRecord.id, dataRecord.ref_no);
+                }
             }
-        });
-    }
+        }
+    });
+    editDataDisable();
+    mainBtnDisable('#deleteData');
 
     // ------------------------------------------------------------
-    // 3b. [BARU] Cetak Tanda Terima Invoice
-    //     Jendela cetak dibuka SINKRON saat klik (hindari popup blocker), data diambil via
-    //     task 'read_invoice_print', lalu HTML ditulis ke jendela dan window.print() dipanggil.
+    // 3. Detail View Renderer
     // ------------------------------------------------------------
-    var PRINT_COMPANY = {           // [BARU] kop dokumen -- sesuaikan (samakan dengan grn.js)
-        name: 'NAMA PERUSAHAAN',
-        address: 'Alamat perusahaan'
-    };
-
-    function enc(v) { return Ext.util.Format.htmlEncode(v == null ? '' : v); }
-
-    // [FIX 2026-10-09] Tanggal diformat manual (dd/mm/yyyy). Sebelumnya memakai Date.format('d/m/Y') milik Ext/app,
-    // yang di jendela cetak menghasilkan "6/10/Y" (tahun tidak terformat, hari tanpa nol di depan).
-    function pad2(n) { return (n < 10 ? '0' : '') + n; }
-    function fmtPrintDate(s) {
-        var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ''));      // 'YYYY-MM-DD' (atau timestamp PostgreSQL)
-        return m ? (m[3] + '/' + m[2] + '/' + m[1]) : '-';
-    }
-    function fmtPrintNow() {
-        var d = new Date();
-        return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
-    }
-
-    function printInvoice(invoiceId) {
-        if (!invoiceId) {
-            Ext.Msg.alert('Peringatan', 'Pilih data invoice yang ingin dicetak.');
-            return;
-        }
-        var w = window.open('', '_blank', 'width=900,height=700');
-        if (!w) {
-            Ext.Msg.alert('Popup Diblokir', 'Izinkan popup untuk situs ini, lalu klik Cetak Tanda Terima lagi.');
-            return;
-        }
-        w.document.write('<html><body style="font-family:Arial,sans-serif;padding:20px;">Memuat Tanda Terima Invoice...</body></html>');
-
+    function loadGrnDetail(grnId, grnNo) {
         Ext.Ajax.request({
-            url: 'php-crud/purchaseinvoiceCRD.php',
+            url: '../php-crud/grnCRD.php',
             method: 'POST',
-            params: { task: 'read_invoice_print', invoice_id: invoiceId },
+            params: { task: 'read_grn_items', grn_id: grnId },
             success: function (response) {
-                var res;
-                try { res = Ext.util.JSON.decode(response.responseText); }
-                catch (e) { w.close(); Ext.Msg.alert('Gagal', 'Respons server tidak valid.'); return; }
-                if (!res.success) { w.close(); Ext.Msg.alert('Gagal', res.message || 'Gagal memuat data cetak.'); return; }
-
-                w.document.open();
-                w.document.write(buildInvoicePrintHtml(res.data.header, res.data.items || []));
-                w.document.close();
-                w.focus();
-                setTimeout(function () { w.print(); }, 400);
+                var res = Ext.util.JSON.decode(response.responseText);
+                if (!res.success) {
+                    grnDtlDiv.innerHTML = '<div style="color:yellow;">Gagal memuat detail GRN.</div>';
+                    grnDtlDiv.style.display = 'block';
+                    return;
+                }
+                renderGrnDetailView(res.data || [], grnNo, res.currency);
             },
             failure: function () {
-                w.close();
-                Ext.Msg.alert('Gagal', 'Gagal menghubungi server.');
+                grnDtlDiv.innerHTML = '<div style="color:red;">Gagal terhubung ke server.</div>';
+                grnDtlDiv.style.display = 'block';
             }
         });
     }
 
-    function buildInvoicePrintHtml(h, items) {
+    function renderGrnDetailView(rows, grnNo, cur) {
+        var fmtQty = function (v) { return Ext.util.Format.number(v || 0, '0,000.0000'); };
         var fmtAmt = function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); };
 
-        // Kode mata uang hanya ditampilkan di total bila seragam di semua baris
-        var codes = {}, codeCount = 0, onlyCode = '';
-        Ext.each(items, function (it) {
-            var c = it.currency_code || '';
-            if (c && !codes[c]) { codes[c] = true; codeCount++; onlyCode = c; }
-        });
-
-        var sum = 0, rowsHtml = '';
-        if (!items.length) {
-            rowsHtml = '<tr><td colspan="6" style="text-align:center;padding:14px;">Tidak ada GRN terhubung.</td></tr>';
-        }
-        Ext.each(items, function (it, i) {
-            var amt = parseFloat(it.matched_amount) || 0;
-            sum += amt;
-            rowsHtml += '<tr>' +
-                '<td class="c">' + (i + 1) + '</td>' +
-                '<td>' + enc(it.grn_ref_no || '-') + '</td>' +
-                '<td class="c">' + fmtPrintDate(it.grn_date) + '</td>' +
-                '<td>' + enc(it.po_ref_no || '-') + '</td>' +
-                '<td>' + enc(it.item_name || '-') + '</td>' +
-                '<td class="r">' + (codeCount > 1 && it.currency_code ? enc(it.currency_code) + ' ' : '') + fmtAmt(amt) + '</td>' +
-                '</tr>';
-        });
-
-        var st = String(h.status || '').toLowerCase();
-        var cancelled = (st === 'cancelled' || st === 'void' || st === 'dibatalkan');
-        var totalLabel = 'TOTAL' + (codeCount === 1 ? ' (' + enc(onlyCode) + ')' : '');
-        var printedAt = fmtPrintNow();       // [FIX 2026-10-09]
-
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Tanda Terima Invoice ' + enc(h.inv_no) + '</title>' +
-            '<style>' +
-            '@page { size: A4; margin: 12mm; }' +
-            'body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #000; margin: 0; }' +
-            '.kop { border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 10px; }' +
-            '.kop .nm { font-size: 17px; font-weight: bold; }' +
-            'h2 { text-align: center; margin: 8px 0 12px 0; font-size: 16px; letter-spacing: 1px; text-decoration: underline; }' +
-            'table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }' +
-            'table.info td { padding: 2px 4px; vertical-align: top; }' +
-            'table.info td.lbl { width: 130px; } table.info td.sep { width: 10px; }' +
-            // [FIX 2026-10-09] Garis tabel: tiap sel bergaris kanan+bawah, tabel bergaris atas+kiri (border-collapse: separate),
-            // table-layout fixed -> kolom paling kanan (Sisa PO / Nominal) tidak lagi terpotong / tanpa garis.
-            // [FIX 2026-10-09 b] width: calc(100% - 2px) + border-box: garis kanan tabel sebelumnya tepat di tepi area cetak -> terpotong di PDF.
-            'table.items { box-sizing: border-box; width: calc(100% - 2px); table-layout: fixed; border-collapse: separate; border-spacing: 0; border-top: 1px solid #000; border-left: 1px solid #000; }' +
-            'table.items th, table.items td { border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 6px; word-wrap: break-word; overflow-wrap: break-word; }' +
-            'table.items th { background: #eee; text-align: center; }' +
-            'table.items tfoot td { font-weight: bold; background: #f5f5f5; }' +
-            '.c { text-align: center; } .r { text-align: right; }' +
-            '.note { margin-top: 8px; }' +
-            'table.sign { width: 100%; margin-top: 28px; border-collapse: collapse; page-break-inside: avoid; }' +
-            'table.sign td { width: 50%; text-align: center; vertical-align: top; }' +
-            '.sign .box { height: 70px; }' +
-            '.sign .line { display: inline-block; min-width: 170px; border-top: 1px solid #000; padding-top: 3px; }' +
-            '.foot { margin-top: 18px; font-size: 10px; color: #444; }' +
-            '.wm { text-align:center; color:#c0392b; font-size:20px; font-weight:bold; border:2px solid #c0392b; padding:4px; margin-bottom:8px; }' +
-            '</style></head><body>' +
-            '<div class="kop"><div class="nm">' + enc(PRINT_COMPANY.name) + '</div><div>' + enc(PRINT_COMPANY.address) + '</div></div>' +
-            '<h2>TANDA TERIMA INVOICE</h2>' +
-            (cancelled ? '<div class="wm">DIBATALKAN</div>' : '') +
-            '<table class="info"><tr>' +
-            '<td class="lbl">No. Tanda Terima</td><td class="sep">:</td><td><b>' + enc(h.inv_no) + '</b></td>' +
-            '<td class="lbl">No. Invoice Supplier</td><td class="sep">:</td><td><b>' + enc(h.supplier_invoice_no || '-') + '</b></td>' +
-            '</tr><tr>' +
-            '<td class="lbl">Tanggal Diterima</td><td class="sep">:</td><td>' + fmtPrintDate(h.created_at) + '</td>' +
-            '<td class="lbl">Tanggal Invoice</td><td class="sep">:</td><td>' + fmtPrintDate(h.invoice_date) + '</td>' +
-            '</tr><tr>' +
-            '<td class="lbl">Supplier</td><td class="sep">:</td><td colspan="4"><b>' + enc(h.supplier_name || '-') + '</b></td>' +
-            '</tr></table>' +
-            '<table class="items"><thead><tr>' +
-            '<th style="width:30px;">No</th><th style="width:110px;">No. GRN</th><th style="width:75px;">Tgl GRN</th>' +
-            '<th style="width:110px;">No. PO</th><th>Item</th><th style="width:120px;">Nominal Invoice</th>' +
-            '</tr></thead><tbody>' + rowsHtml + '</tbody>' +
-            '<tfoot><tr><td colspan="5" class="r">' + totalLabel + '</td><td class="r">' + fmtAmt(sum) + '</td></tr></tfoot></table>' +
-            (codeCount > 1 ? '<div class="note"><i>Catatan: GRN terhubung memakai mata uang berbeda; total hanya penjumlahan nominal.</i></div>' : '') +
-            (h.remark ? '<div class="note"><b>Keterangan:</b> ' + enc(h.remark) + '</div>' : '') +
-            '<table class="sign"><tr>' +
-            '<td>Yang Menyerahkan (Supplier / Kurir)<div class="box"></div><span class="line">( .............................. )</span></td>' +
-            '<td>Yang Menerima (Finance / AP)<div class="box"></div><span class="line">( ' + enc(h.created_by_name || '..............................') + ' )</span></td>' +
-            '</tr></table>' +
-            '<div class="foot">Dicetak: ' + printedAt + '</div>' +
-            '</body></html>';
-    }
-
-    function renderInvoiceDetailPanel(rows, invoiceNo, invoiceId) {
-        var fmtAmt = function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); };
-        var fmtQty = function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); };
-
-        var html = '<h3 class="detail-title" style="margin:10px 0 15px 0; font-size:14px; color:#38bdf8;">Detail Match GRN / Item Invoice: ' +
-                   Ext.util.Format.htmlEncode(invoiceNo || '') +
-                   // [BARU] tombol cetak tanda terima
-                   '<button type="button" id="btnPrintInvoice" style="float:right; padding:5px 14px; background:#2e6da4; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold; font-size:12px;">&#128424; Cetak Tanda Terima</button>' +
-                   '</h3>' +
-                   '<hr class="detail-hr" style="border:0; border-top:1px solid #334155; margin-bottom:10px;" />' +
-                   '<table id="payTable" class="detail-table" width="100%" cellSpacing="0" cellPadding="6" style="border-collapse:collapse; color:#f8fafc; font-size:12px;">' +
+        var code = (cur && cur.code) || 'IDR', baseCode = (cur && cur.base_code) || 'IDR';
+        var diff = code !== baseCode;
+        var html = '<h3 class="detail-title">Detail Item GRN: ' + Ext.util.Format.htmlEncode(grnNo || '') + '</h3>' +
+                   '<hr class="detail-hr" />' +
+                   '<table class="detail-table" width="100%" cellSpacing="0" cellPadding="0">' +
                    '<thead>' +
-                   '<tr class="header-row" style="background-color:#1e293b; color:#94a3b8;">' +
-                   '<th align="left">No. Ref GRN</th>' +
-                   '<th align="left">Item / Ref</th>' +
-                   '<th align="right">Qty</th>' +
-                   '<th align="right">Harga Satuan</th>' +
-                   '<th align="right">Total Subtotal</th>' +
-                   '<th align="right">Nominal Matched</th>' +
+                   '<tr class="header-row">' +
+                   '<th align="left">Nama Item</th>' +
+                    '<th style="text-align:right;">Qty Diterima</th>' +
+                    '<th style="text-align:right;">Harga Satuan (' + Ext.util.Format.htmlEncode(code) + ')</th>' +
+                    '<th style="text-align:right;">Subtotal (' + Ext.util.Format.htmlEncode(code) + ')</th>' +
+                    (diff ? '<th style="text-align:right;">Subtotal Dasar (' + Ext.util.Format.htmlEncode(baseCode) + ')</th>' : '') +
                    '</tr>' +
                    '</thead>' +
                    '<tbody>';
 
-        if (!rows || rows.length === 0) {
-            html += '<tr><td colspan="6" style="padding:15px; text-align:center; color:#94a3b8;">Belum ada rincian GRN/Item terhubung untuk invoice ini.</td></tr>';
-        } else {
-            var grandTotal = 0;
-            Ext.each(rows, function (r) {
-                var matched = parseFloat(r.matched_amount_this_invoice || r.matched_amount || r.subtotal || r.amount || 0);
-                var grnTotal = parseFloat(r.grn_total || r.subtotal || 0);
-                grandTotal += matched;
+        var grandTotal = 0, grandBase = 0;
 
-                html += '<tr class="data-row" style="border-bottom:1px solid #334155;">' +
-                        '<td align="left">' + Ext.util.Format.htmlEncode(r.grn_ref_no || r.ref_no || '-') + '</td>' +
-                        '<td align="left">' + Ext.util.Format.htmlEncode(r.item_name || r.remark || '-') + '</td>' +
-                        '<td align="right">' + fmtQty(r.qty_received) + '</td>' +
-                        '<td align="right">' + fmtAmt(r.unit_cost) + '</td>' +
-                        '<td align="right">' + fmtAmt(grnTotal) + '</td>' +
-                        '<td align="right" style="color:#38bdf8; font-weight:bold;">' + fmtAmt(matched) + '</td>' +
+        if (!rows || rows.length === 0) {
+            html += '<tr><td colspan="5" class="empty-msg">Tidak ada item detail.</td></tr>';
+        } else {
+            Ext.each(rows, function (r) {
+                var qty = parseFloat(r.qty) || 0;
+                var cost = parseFloat(r.unit_price) || 0;
+                var subtotal = qty * cost;
+                var subBase = qty * (parseFloat(r.unit_cost_base) || 0);
+                grandTotal += subtotal;
+                grandBase += subBase;
+
+                html += '<tr class="data-row">' +
+                        '<td align="left">' + Ext.util.Format.htmlEncode(r.item_name || '-') + '</td>' +
+                        '<td align="right" style="color:#4ade80; font-weight:bold;">' + fmtQty(qty) + '</td>' +
+                        '<td align="right">' + fmtAmt(cost) + '</td>' +
+                        '<td align="right" class="subtotal-val">' + fmtAmt(subtotal) + '</td>' +
+                        (diff ? '<td align="right" style="color:#9fc3d1;">' + fmtAmt(subBase) + '</td>' : '') +
                         '</tr>';
             });
-
-            html += '<tr class="footer-row" style="background-color:#0f172a; font-weight:bold;">' +
-                    '<td colspan="5" align="right" style="padding:8px;">TOTAL INVOICE:</td>' +
-                    '<td align="right" style="color:#22c55e;">' + fmtAmt(grandTotal) + '</td>' +
-                    '</tr>';
         }
-        html += '</tbody></table>';
 
-        payDtlDiv.innerHTML = html;
-        payDtlDiv.style.display = 'block';
+        html += '</tbody>' +
+                '<tfoot>' +
+                '<tr class="total-row">' +
+                '<td colspan="3" align="right" class="total-label">Total Nilai GRN:</td>' +
+                '<td align="right" class="total-val">' + fmtAmt(grandTotal) + ' ' + Ext.util.Format.htmlEncode(code) + '</td>' +
+                (diff ? '<td align="right" class="total-val">' + fmtAmt(grandBase) + ' ' + Ext.util.Format.htmlEncode(baseCode) + '</td>' : '') +
+                '</tr>' +
+                '</tfoot>' +
+                '</table>';
 
-        // [BARU] handler tombol cetak
-        var btnPrint = document.getElementById('btnPrintInvoice');
-        if (btnPrint) btnPrint.onclick = function () { printInvoice(invoiceId); };
+        grnDtlDiv.innerHTML = html;
+        grnDtlDiv.style.display = 'block';
     }
 
-    gridMain.on('rowclick', function (grid, rowIndex) {
-        var rec = grid.getStore().getAt(rowIndex);
-        if (rec) {
-            dataRecord = rec.data;
-            if (typeof mainBtnEnable === 'function') mainBtnEnable('#editData');
-            if (typeof mainBtnEnable === 'function') mainBtnEnable('#deleteData');
-            
-            loadInvoiceDetailPanel(dataRecord.id, dataRecord.inv_no, dataRecord.supplier_id);
+    // ------------------------------------------------------------
+    // 4. Item Grid Editor
+    // ------------------------------------------------------------
+    function toleranceRenderer(v, meta, record) {
+        var qtyOrdered = parseFloat(record.get('qty_ordered')) || 0;
+        var qtyMax = parseFloat(record.get('qty_max_allowed')) || (qtyOrdered * 1.10);
+        var qtyInput = parseFloat(v) || 0;
+
+        var pctOfOrdered = qtyOrdered > 0 ? (qtyInput / qtyOrdered) * 100 : 0;
+        var color = '#2e9e4f';
+        if (qtyInput > qtyOrdered && qtyInput <= qtyMax) {
+            color = '#e08e0b';
+        } else if (qtyInput > qtyMax) {
+            color = '#c0392b';
         }
-    });
+        return '<b style="color:' + color + ';">' + Ext.util.Format.number(qtyInput, '0,000.0000') +
+               '</b> <span style="color:#888;font-size:11px;">(' + pctOfOrdered.toFixed(0) + '% dari PO)</span>';
+    }
 
-    // ------------------------------------------------------------
-    // 4. Form Editor & Grid Editor Detail Setup
-    // ------------------------------------------------------------
-    var fldId = new myTextField({ name: 'id', id: 'id', hidden: true });
-    var fldInvNo = new myTextField({ fieldLabel: 'No. Ref Dokumen', id: 'inv_no', name: 'inv_no', allowBlank: true, readOnly: true, disabled: true, emptyText: 'Otomatis oleh sistem', width: 200 });
-    var fldSuppInvNo = new myTextField({ fieldLabel: 'No. Supp. Invoice', id: 'supplier_invoice_no', name: 'supplier_invoice_no', allowBlank: false, width: 200 });
-    var fldInvDate = new Ext.form.DateField({ fieldLabel: 'Tanggal Invoice', id: 'invoice_date', name: 'invoice_date', format: 'Y-m-d', width: 140, allowBlank: false });
-    var fldSupplier = new myComboField({ fieldLabel: 'Supplier', id: 'supplier_id', name: 'supplier_id', hiddenName: 'supplier_id', store: supplierDs, displayField: 'name', valueField: 'id', mode: 'remote', triggerAction: 'all', width: 200, allowBlank: false });
-    var fldRemark = new Ext.form.TextArea({ fieldLabel: 'Keterangan', id: 'remark', name: 'remark', anchor: '98%', height: 45 });
-
-    // [BARU] Begitu supplier dipilih, otomatis tarik semua GRN supplier itu
-    // yang belum pernah di-invoice-kan, langsung jadi baris di grid detail.
-    // Default nominal matched = qty_received x unit_cost, sama seperti Add Item manual.
-    function autoLoadAvailableGrn(supplierId) {
-        if (!supplierId) return;
-        Ext.Ajax.request({
-            url: 'php-crud/purchaseinvoiceCRD.php',
-            method: 'POST',
-            params: { task: 'read_available_grn', supplier_id: supplierId },
-            success: function (response) {
-                var res;
-                try {
-                    res = Ext.util.JSON.decode(response.responseText);
-                } catch (e) {
-                    return;
-                }
-                if (!res.success) return;
-
-                Ext.each(res.data || [], function (g) {
-                    var already = false;
-                    gridEditorInvoiceDs.each(function (r) {
-                        if (r.get('grn_hdr_id') === g.grn_hdr_id) already = true;
-                    });
-                    if (already) return;
-
-                    var qty = parseFloat(g.qty_received || 0);
-                    var price = parseFloat(g.unit_cost || 0);
-                    var remaining = parseFloat(g.remaining || 0);
-
-                    var NewItem = gridEditorInvoiceDs.recordType;
-                    var newRecord = new NewItem({
-                        id: 0,
-                        invoice_hdr_id: 0,
-                        grn_hdr_id: g.grn_hdr_id,
-                        grn_ref_no: g.grn_ref_no,
-                        item_name: g.item_name,
-                        qty_received: qty,
-                        unit_cost: price,
-                        grn_total: g.grn_total,
-                        matched_amount: remaining
-                    });
-                    gridEditorInvoiceDs.add(newRecord);
-                });
+    var itemGrid = new stdGridEditor({
+        store: itemGridDs,
+        renderTo: 'editorFormGrid',
+        viewConfig: { forceFit: true, scrollOffset: 0 },
+        height: 240,
+        columns: [
+            { header: 'Item', dataIndex: 'item_name', width: 180, renderer: CellWrap },
+            {
+                header: 'Qty PO', dataIndex: 'qty_ordered', width: 90, align: 'right',
+                renderer: function (v) { return Ext.util.Format.number(v || 0, '0,000.0000'); }
             },
-            failure: function () {
-                Ext.Msg.alert('Error', 'Gagal memuat daftar GRN otomatis untuk supplier ini.');
+            {
+                header: 'Sisa Qty PO', dataIndex: 'sisa_qty_po', width: 90, align: 'right',
+                renderer: function (v) { return '<b style="color:#38bdf8;">' + Ext.util.Format.number(v || 0, '0,000.0000') + '</b>'; }
+            },
+            {
+                header: 'Batas +10%', dataIndex: 'qty_max_allowed', width: 90, align: 'right',
+                renderer: function (v) { return Ext.util.Format.number(v || 0, '0,000.0000'); }
+            },
+            {
+                header: 'Qty Diterima', dataIndex: 'qty_input', width: 150, align: 'right',
+                editor: new myNumberField({ decimalPrecision: 4 }),
+                renderer: toleranceRenderer
+            },
+            {
+                header: 'Harga Satuan', dataIndex: 'unit_cost', width: 110, align: 'right',
+                editor: new myNumberField({ decimalPrecision: 2 }),
+                renderer: function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); }
+            },
+            {
+                header: 'Subtotal', dataIndex: 'qty_input', width: 130, align: 'right',
+                renderer: function (v, meta, record) {
+                    var subtotal = (parseFloat(record.get('qty_input')) || 0) * (parseFloat(record.get('unit_cost')) || 0);
+                    return '<b>' + Ext.util.Format.number(subtotal, '0,000.00') + '</b>';
+                }
+            },
+            {
+                header: 'Subtotal Dasar', dataIndex: 'unit_cost', width: 130, align: 'right', hidden: true,
+                renderer: function (v, meta, record) {
+                    var base = (parseFloat(record.get('qty_input')) || 0) * (parseFloat(record.get('unit_cost')) || 0) * grnCur.rate;
+                    return '<span style="color:#9fc3d1;">' + Ext.util.Format.number(base, '0,000.00') + '</span>';
+                }
             }
-        });
+        ],
+        listeners: {
+            afteredit: function (e) {
+                if (e.field === 'qty_input') {
+                    var qtyMax = parseFloat(e.record.get('qty_max_allowed')) || 0;
+                    var qtyInput = parseFloat(e.value) || 0;
+                    if (qtyInput > qtyMax) {
+                        e.record.set('qty_input', qtyMax);
+                        Ext.Msg.alert('Peringatan', 'Qty diterima melebihi batas toleransi 10% dari PO. Otomatis dibatasi ke ' + Ext.util.Format.number(qtyMax, '0,000.0000') + '.');
+                    }
+                    if (qtyInput < 0) {
+                        e.record.set('qty_input', 0);
+                    }
+                }
+                updateGrnTotalLabel();
+            }
+        }
+    });
+    itemGrid.addClass('x-grid3-gridEditor');
+
+    // Judul kolom mengikuti mata uang PO; kolom "Subtotal Dasar" hanya tampil bila mata uang PO bukan mata uang dasar
+    function applyCurrencyHeaders() {
+        var cm = itemGrid.getColumnModel();
+        var diff = grnCur.code !== grnCur.base;
+        cm.setColumnHeader(5, 'Harga Satuan (' + grnCur.code + ')');
+        cm.setColumnHeader(6, 'Subtotal (' + grnCur.code + ')');
+        cm.setColumnHeader(7, 'Subtotal Dasar (' + grnCur.base + ')');
+        cm.setHidden(7, !diff);
+        setCurInfo();
+        itemGrid.getView().refresh();
     }
 
-    fldSupplier.on('select', function (combo, record) {
-        autoLoadAvailableGrn(record.get('id'));
+    function setCurInfo() {
+        if (!fldCurInfo) return;
+        fldCurInfo.setValue('<b>' + Ext.util.Format.htmlEncode(grnCur.code) + '</b>' +
+            (grnCur.code !== grnCur.base
+                ? ' &nbsp;(kurs PO: 1 ' + Ext.util.Format.htmlEncode(grnCur.code) + ' = ' + Ext.util.Format.number(grnCur.rate, '0,000.0000') + ' ' + Ext.util.Format.htmlEncode(grnCur.base) + ')'
+                : ' &nbsp;(mata uang dasar)'));
+    }
+
+    function updateGrnTotalLabel() {
+        var total = 0;
+        itemGridDs.each(function (r) {
+            var qty = parseFloat(r.get('qty_input')) || 0;
+            var cost = parseFloat(r.get('unit_cost')) || 0;
+            total += qty * cost;
+        });
+        var el = document.getElementById('lblGrnTotal');
+        if (el) {
+            var html = Ext.util.Format.number(total, '0,000.00') + ' ' + Ext.util.Format.htmlEncode(grnCur.code);
+            if (grnCur.code !== grnCur.base) {
+                html += ' <span style="color:#9fc3d1; font-weight:normal;">&asymp; ' + Ext.util.Format.number(total * grnCur.rate, '0,000.00') + ' ' + Ext.util.Format.htmlEncode(grnCur.base) + '</span>';
+            }
+            el.innerHTML = html;
+        }
+    }
+
+    // ------------------------------------------------------------
+    // 5. Editor Form
+    // ------------------------------------------------------------
+    var fldRefNo = new myTextField({ fieldLabel: 'No. GRN', id: 'ref_no', name: 'ref_no', readOnly: true, emptyText: 'Auto-generate' });
+    var fldPoHdr = new myComboField({
+        fieldLabel: 'Purchase Order', id: 'po_id', name: 'po_id', hiddenName: 'po_id',
+        store: poDs, displayField: 'ref_no', valueField: 'id', allowBlank: false,
+        listeners: {
+            select: function (combo, record) {
+                Ext.getCmp('supplier_id_hidden') && Ext.getCmp('supplier_id_hidden').setValue(record.get('supplier_id'));
+                grnCur = { code: record.get('currency_code') || grnCur.base, base: grnCur.base, rate: parseFloat(record.get('exch_rate')) || 1 };
+                setCurInfo();
+                itemGridDs.load({
+                    params: {
+                        po_id: record.get('id'),
+                        grn_id: (task === 'update' && dataRecord) ? dataRecord.id : 0
+                    }
+                });
+            }
+        }
     });
+    var fldCurInfo = new Ext.form.DisplayField({ fieldLabel: 'Mata Uang PO', value: '-' });
+    var fldGrnDate = new myDateField({ fieldLabel: 'Tgl GRN', id: 'grn_date', name: 'grn_date', allowBlank: false, value: new Date() });
+    var fldSupplierIdHidden = new myTextField({ id: 'supplier_id_hidden', name: 'supplier_id', hidden: true });
+    var fldRemark = new myTextArea({ fieldLabel: 'Keterangan', id: 'remark', name: 'remark' });
 
     var frmEditor = new stdForm({
         id: 'frmEditor',
@@ -426,333 +399,165 @@ Ext.onReady(function () {
         labelWidth: 120,
         defaults: { xtype: 'container', layout: 'form', columnWidth: 0.5, baseCls: 'x-plain' },
         items: [
-            { items: [fldId, fldInvNo, fldSuppInvNo, fldInvDate] },
-            { items: [fldSupplier, fldRemark] }
+            { columnWidth: .333, items: fldRefNo },
+            { columnWidth: .333, items: fldGrnDate },
+            { columnWidth: .333, items: fldPoHdr },
+            { columnWidth: 1, items: fldCurInfo },
+            { columnWidth: 1, items: fldRemark },
+            { items: fldSupplierIdHidden }
         ]
     });
 
-    var invoiceItemFields = [
-        { name: 'id', type: 'int' },
-        { name: 'invoice_hdr_id', type: 'int' },
-        { name: 'grn_hdr_id', type: 'int' },
-        { name: 'grn_ref_no', type: 'string' },
-        { name: 'item_name', type: 'string' },
-        { name: 'qty_received', type: 'float' },
-        { name: 'unit_cost', type: 'float' },
-        { name: 'grn_total', type: 'float' },
-        { name: 'matched_amount', type: 'float' }
-    ];
+    document.getElementById('addData').onclick = function () {
+        if (getFormAccess() >= 2) {
+            task = 'create';
+            frmEditor.getForm().reset();
+            itemGridDs.removeAll();
+            grnCur = { code: 'IDR', base: grnCur.base, rate: 1 };
+            grnCur.code = grnCur.base;
+            applyCurrencyHeaders();
+            poDs.load(); // Reload PO outstanding
+            updateGrnTotalLabel();
+            fldPoHdr.setDisabled(false);
+            document.getElementById('editorWdw').style.display = 'block';
+            document.getElementById('editorFormHeaderText').innerHTML = '&nbsp;&nbsp;GRN Baru';
+        }
+    };
 
-    var gridEditorInvoiceDs = new Ext.data.Store({
-        url: 'php-crud/purchaseinvoiceCRD.php',
-        baseParams: { task: 'read_invoice_detail' },
-        reader: new Ext.data.JsonReader({ root: 'data', fields: invoiceItemFields })
-    });
+    document.getElementById('editData').onclick = function () {
+        task = '';
+        if (!dataRecord) {
+            Ext.Msg.alert('Peringatan', 'Pilih data GRN yang ingin diedit.');
+            return;
+        }
 
-    var editorDeleter = new Extensive.grid.ItemDeleter();
+        if (getFormAccess() >= 3) {
+            frmEditor.getForm().reset();
+            task = 'update';
 
-    // Store daftar GRN yang bisa dipilih (untuk window picker "Add Item")
-    var availableGrnDs = new Ext.data.Store({
-        url: 'php-crud/purchaseinvoiceCRD.php',
-        baseParams: { task: 'read_available_grn' },
-        reader: new Ext.data.JsonReader({ root: 'data' }, [
-            { name: 'grn_hdr_id', type: 'int' },
-            { name: 'grn_ref_no', type: 'string' },
-            { name: 'grn_date', type: 'date', dateFormat: 'Y-m-d' },
-            { name: 'item_name', type: 'string' },
-            { name: 'qty_received', type: 'float' },
-            { name: 'unit_cost', type: 'float' },
-            { name: 'grn_total', type: 'float' },
-            { name: 'already_matched', type: 'float' },
-            { name: 'remaining', type: 'float' }
-        ])
-    });
-
-    var gridGrnPicker = new Ext.grid.GridPanel({
-        store: availableGrnDs,
-        height: 320,
-        width: 640,
-        stripeRows: true,
-        loadMask: true,
-        viewConfig: {
-            forceFit: true,
-            emptyText: '<div style="padding:20px; text-align:center; color:#94a3b8;">Tidak ada GRN yang tersedia untuk supplier ini.</div>'
-        },
-        columns: [
-            { header: 'No. Ref GRN', dataIndex: 'grn_ref_no', width: 100 },
-            { header: 'Tgl GRN', dataIndex: 'grn_date', width: 85, renderer: Ext.util.Format.dateRenderer('Y-m-d') },
-            { header: 'Item', dataIndex: 'item_name', width: 150 },
-            { header: 'Total GRN', dataIndex: 'grn_total', width: 90, align: 'right', renderer: format_number },
-            { header: 'Sudah Di-invoice', dataIndex: 'already_matched', width: 100, align: 'right', renderer: format_number },
-            { header: 'Sisa Belum Invoice', dataIndex: 'remaining', width: 110, align: 'right', renderer: format_number, css: 'font-weight:bold;' }
-        ]
-    });
-
-    var wdwGrnPicker = new Ext.Window({
-        title: 'Pilih GRN untuk Di-match',
-        width: 660,
-        height: 400,
-        modal: true,
-        closeAction: 'hide',
-        layout: 'fit',
-        items: [gridGrnPicker],
-        buttons: [{
-            text: 'Pilih',
-            handler: function () {
-                var rec = gridGrnPicker.getSelectionModel().getSelected();
-                if (!rec) {
-                    Ext.Msg.alert('Peringatan', 'Silakan pilih salah satu GRN.');
-                    return;
-                }
-
-                // Cegah GRN yang sama ditambahkan dua kali ke invoice yang sama
-                var already = false;
-                gridEditorInvoiceDs.each(function (r) {
-                    if (r.get('grn_hdr_id') === rec.get('grn_hdr_id')) already = true;
-                });
-                if (already) {
-                    Ext.Msg.alert('Peringatan', 'GRN ini sudah ditambahkan ke invoice.');
-                    return;
-                }
-
-                var qty = parseFloat(rec.get('qty_received') || 0);
-                var price = parseFloat(rec.get('unit_cost') || 0);
-                var remaining = parseFloat(rec.get('remaining') || 0);
-
-                var NewItem = gridEditorInvoiceDs.recordType;
-                var newRecord = new NewItem({
-                    id: 0,
-                    invoice_hdr_id: 0,
-                    grn_hdr_id: rec.get('grn_hdr_id'),
-                    grn_ref_no: rec.get('grn_ref_no'),
-                    item_name: rec.get('item_name'),
-                    qty_received: qty,
-                    unit_cost: price,
-                    grn_total: rec.get('grn_total'),
-                    // [FIX] Nominal matched default = sisa yang belum di-invoice
-                    // (untuk GRN baru = qty x harga = sama dengan grn_total)
-                    matched_amount: remaining
-                });
-                gridEditorInvoiceDs.add(newRecord);
-
-                wdwGrnPicker.hide();
+            if (!poDs.getById(dataRecord.po_id)) {
+                var PoRecord = Ext.data.Record.create(poField);
+                poDs.add(new PoRecord({
+                    id: dataRecord.po_id,
+                    ref_no: dataRecord.po_ref_no + ' (sudah selesai diterima)',
+                    supplier_id: dataRecord.supplier_id,
+                    supplier_name: dataRecord.supplier_name,
+                    currency_code: dataRecord.currency_code,
+                    exch_rate: dataRecord.exch_rate
+                }, dataRecord.po_id));
             }
-        }, {
-            text: 'Batal',
-            handler: function () { wdwGrnPicker.hide(); }
-        }]
-    });
 
-    var gridEditorInvoice = new stdGridEditor({
-        id: 'gridEditorInvoice',
-        renderTo: 'editorFormGrid',
-        store: gridEditorInvoiceDs,
-        selModel: editorDeleter,
-        columns: [
-            { header: 'No. Ref GRN', dataIndex: 'grn_ref_no', width: 130, align: 'left' },
-            { header: 'Item / Material', dataIndex: 'item_name', width: 200, align: 'left' },
-            { header: 'Qty', dataIndex: 'qty_received', width: 80, align: 'right', renderer: format_number },
-            { header: 'Harga Satuan', dataIndex: 'unit_cost', width: 100, align: 'right', renderer: format_number },
-            { 
-                header: 'Nominal Matched', 
-                dataIndex: 'matched_amount', 
-                width: 120, 
-                align: 'right', 
-                renderer: format_number,
-                editor: new Ext.form.NumberField(),
-                css: cssGridEditColumn 
-            },
-            editorDeleter,
-            { dataIndex: 'id', hidden: true },
-            { dataIndex: 'invoice_hdr_id', hidden: true },
-            { dataIndex: 'grn_hdr_id', hidden: true }
-        ],
-        tbar: [
-            '<div id="gridHeaderText">Rincian Item / GRN</div>',
-            { xtype: 'tbfill' },
-            { 
-                text: '&nbsp;&nbsp;&nbsp;Add Item&nbsp;&nbsp;&nbsp;', 
-                ctCls: 'field-button green-field-button', 
-                id: 'btnAddInvoiceItem', 
-                handler: function() {
-                    var supplierId = fldSupplier.getValue();
-                    if (!supplierId) {
-                        Ext.Msg.alert('Peringatan', 'Pilih supplier terlebih dahulu sebelum menambah item.');
-                        return;
-                    }
-                    availableGrnDs.load({ params: { supplier_id: supplierId } });
-                    wdwGrnPicker.show();
-                } 
-            }
-        ],
-        listeners: {
-            // [PERBAIKAN] Otomatis set default nominal matched = qty_received * unit_cost jika kosong/0
-            render: function(grid) {
-                grid.getStore().on('load', function(store) {
-                    store.each(function(record) {
-                        var currentMatched = record.get('matched_amount');
-                        if (!currentMatched || currentMatched === 0) {
-                            var qty = parseFloat(record.get('qty_received') || 0);
-                            var price = parseFloat(record.get('unit_cost') || 0);
-                            record.set('matched_amount', qty * price);
+            frmEditor.getForm().load({
+                url: '../php-crud/grnCRD.php',
+                params: { id: dataRecord.id, task: 'read_edit' },
+                success: function (form, action) {
+                    fldPoHdr.setDisabled(true);
+                    itemGridDs.load({
+                        params: {
+                            po_id: dataRecord.po_id,
+                            grn_id: dataRecord.id
+                        },
+                        callback: function () {
+                            updateGrnTotalLabel();
                         }
                     });
-                });
-            }
-        }
-    });
-    gridEditorInvoice.addClass('x-grid3-gridEditor');
-
-    function setInvoiceGridEditorHeight() {
-        var editorFormHeight = $('#editorForm').height() || 400;
-        var headerHeight = $('#editorFormHeader').height() || 50;
-        var mainFormHeight = $('#editorFormMain').height() || 150;
-        var computedHeight = editorFormHeight - headerHeight - mainFormHeight - 20;
-        
-        if (computedHeight > 150) {
-            gridEditorInvoice.setHeight(computedHeight);
-        }
-    }
-
-    function showWindow(titleText) {
-        var wdw = document.getElementById('editorWdw');
-        if (wdw) wdw.style.display = 'block';
-        if (document.getElementById('editorFormHeaderText')) {
-            document.getElementById('editorFormHeaderText').innerHTML = '&nbsp;&nbsp;' + titleText;
-        }
-        setInvoiceGridEditorHeight();
-        // [FIX] Typo lama: id komponennya 'frmEditor', bukan 'frmGridEditor'
-        // (yang tidak pernah ada) -> Ext.getCmp() balik undefined -> crash di .doLayout()
-        var frmCmp = Ext.getCmp('frmEditor');
-        if (frmCmp) frmCmp.doLayout();
-    }
-
-    function hideWindow() {
-        var wdw = document.getElementById('editorWdw');
-        if (wdw) wdw.style.display = 'none';
-    }
-
-    // ------------------------------------------------------------
-    // 5. Action Handlers (Add, Edit, Delete, Save, Discard)
-    // ------------------------------------------------------------
-    if (Ext.get('addData')) {
-        Ext.get('addData').on('click', function (e) {
-            if (e) e.stopEvent();
-            task = 'create';
-            dataRecord = null;
-            frmEditor.getForm().reset();
-            supplierDs.load();
-            gridEditorInvoiceDs.load({ params: { invoice_id: 0 } });
-            showWindow('Tambah Purchase Invoice');
-        });
-    }
-
-    if (Ext.get('editData')) {
-        Ext.get('editData').on('click', function (e) {
-            if (e) e.stopEvent();
-            if (!dataRecord) {
-                Ext.Msg.alert('Peringatan', 'Silakan pilih data invoice terlebih dahulu.');
-                return;
-            }
-            task = 'update';
-            supplierDs.load({
-                callback: function() {
-                    frmEditor.getForm().reset();
-                    frmEditor.getForm().setValues(dataRecord);
-                    gridEditorInvoiceDs.load({ params: { invoice_id: dataRecord.id } });
-                    showWindow('Edit Purchase Invoice');
                 }
             });
-        });
-    }
 
-    if (Ext.get('deleteData')) {
-        Ext.get('deleteData').on('click', function (e) {
-            if (e) e.stopEvent();
-            if (!dataRecord) {
-                Ext.Msg.alert('Peringatan', 'Silakan pilih data invoice terlebih dahulu.');
-                return;
-            }
+            document.getElementById('editorWdw').style.display = 'block';
+            document.getElementById('editorFormHeaderText').innerHTML = '&nbsp;&nbsp;Edit GRN';
+        } else {
+            Ext.Msg.alert('Akses Ditolak', 'Anda tidak memiliki hak akses untuk mengedit.');
+        }
+    };
 
-            Ext.Msg.confirm('Konfirmasi', 'Apakah Anda yakin ingin menghapus invoice ' + dataRecord.inv_no + '?', function (btn) {
+    document.getElementById('deleteData').onclick = function () {
+        if (!dataRecord) {
+            Ext.Msg.alert('Peringatan', 'Pilih data GRN yang ingin dihapus.');
+            return;
+        }
+        if (getFormAccess() >= 4) {
+            Ext.Msg.confirm('Konfirmasi Hapus', 'Hapus GRN \'' + dataRecord.ref_no + '\'? Jurnal & status outstanding PO akan dibatalkan otomatis.', function (btn) {
                 if (btn === 'yes') {
                     Ext.Ajax.request({
-                        url: 'php-crud/purchaseinvoiceCRD.php',
+                        url: '../php-crud/grnCRD.php',
                         method: 'POST',
                         params: { task: 'delete', id: dataRecord.id },
                         success: function (response) {
                             var res = Ext.util.JSON.decode(response.responseText);
-                            if (res.success) {
-                                Ext.Msg.alert('Sukses', 'Data invoice berhasil dihapus.');
-                                mainDs.reload();
-                                payDtlDiv.style.display = 'none';
-                                dataRecord = null;
-                                if (typeof mainBtnDisable === 'function') {
-                                    mainBtnDisable('#editData');
-                                    mainBtnDisable('#deleteData');
-                                }
-                            } else {
-                                Ext.Msg.alert('Gagal', res.message || 'Gagal menghapus data.');
-                            }
+                            Ext.Msg.alert('Informasi', res.message);
+                            grnDtlDiv.style.display = 'none';
+                            mainDs.load();
                         },
                         failure: function () {
-                            Ext.Msg.alert('Error', 'Gagal terhubung ke server.');
+                            Ext.Msg.alert('Gagal', 'Gagal menghubungi server.');
                         }
                     });
                 }
             });
-        });
-    }
+        } else {
+            Ext.Msg.alert('Akses Ditolak', 'Anda tidak memiliki hak akses menghapus data.');
+        }
+    };
 
-    if (Ext.get('saveEdit')) {
-        Ext.get('saveEdit').on('click', function (e) {
-            if (e) e.stopEvent();
-            if (!frmEditor.getForm().isValid()) {
-                Ext.Msg.alert('Peringatan', 'Mohon lengkapi semua field yang wajib diisi.');
-                return;
+    document.getElementById('saveEdit').onclick = function () {
+        var poHdrId = fldPoHdr.getValue();
+        if (!poHdrId) {
+            Ext.Msg.alert('Peringatan', 'Pilih Purchase Order terlebih dahulu.');
+            return;
+        }
+
+        var arrItems = [];
+        itemGridDs.each(function (r) {
+            var qty = parseFloat(r.get('qty_input')) || 0;
+            if (qty > 0) {
+                arrItems.push({
+                    po_dtl_id: r.get('po_dtl_id'),
+                    item_id: r.get('item_id'),
+                    item_name: r.get('item_name'),
+                    qty_received: qty,
+                    unit_cost: parseFloat(r.get('unit_cost')) || 0,
+                    remark: ''
+                });
             }
+        });
 
-            // [PERBAIKAN] Menghentikan mode edit aktif pada grid agar nilai sel terakhir ikut tersimpan di store
-            if (gridEditorInvoice.stopEditing) {
-                gridEditorInvoice.stopEditing();
+        if (arrItems.length === 0) {
+            Ext.Msg.alert('Peringatan', 'Minimal 1 item dengan qty diterima > 0.');
+            return;
+        }
+
+        var currentId = (task === 'update' && dataRecord) ? dataRecord.id : null;
+        var supplierId = fldSupplierIdHidden.getValue();
+        if (!supplierId && task === 'update' && dataRecord) {
+            supplierId = dataRecord.supplier_id;
+        }
+
+        frmEditor.getForm().submit({
+            url: '../php-crud/grnCRD.php',
+            method: 'POST',
+            params: {
+                task: task,
+                id: currentId,
+                supplier_id: supplierId,
+                arrItems: JSON.stringify(arrItems)
+            },
+            waitTitle: 'Menyimpan',
+            waitMsg: 'Memproses GRN & auto-jurnal...',
+            success: function (form, action) {
+                var res = Ext.util.JSON.decode(action.response.responseText);
+                Ext.Msg.alert('Sukses', res.message);
+                grnDtlDiv.style.display = 'none';
+                mainDs.load();
+                document.getElementById('editorWdw').style.display = 'none';
+            },
+            failure: function (form, action) {
+                var res = Ext.util.JSON.decode(action.response.responseText);
+                Ext.Msg.alert('Gagal', res.message || 'Terjadi kesalahan sistem.');
             }
-
-            // [PERBAIKAN] Menampung seluruh data row grid editor ke dalam array objek JavaScript
-            var detailRecords = [];
-            gridEditorInvoiceDs.each(function(record) {
-                detailRecords.push(record.data);
-            });
-
-            // [PERBAIKAN] Kirim data form beserta detail grid yang sudah di-encode ke format JSON
-            frmEditor.getForm().submit({
-                url: 'php-crud/purchaseinvoiceCRD.php',
-                params: { 
-                    task: task,
-                    invoice_details: Ext.encode(detailRecords) 
-                },
-                waitMsg: 'Menyimpan data...',
-                success: function (form, action) {
-                    Ext.Msg.alert('Sukses', 'Data invoice berhasil disimpan.');
-                    hideWindow();
-                    mainDs.reload();
-                    payDtlDiv.style.display = 'none';
-                },
-                failure: function (form, action) {
-                    var msg = action.result ? action.result.message : 'Gagal menyimpan data.';
-                    Ext.Msg.alert('Gagal', msg);
-                }
-            });
         });
-    }
+    };
 
-    var btnDiscard = Ext.get('discardEdit') || Ext.select('#editorWdw .x-tool-close');
-    if (btnDiscard) {
-        btnDiscard.on('click', function (e) {
-            if (e) e.stopEvent();
-            hideWindow();
-        });
-    }
-
-    var wdwInit = document.getElementById('editorWdw');
-    if (wdwInit) wdwInit.style.display = 'none';
+    document.getElementById('editorWdw').style.display = 'none';
+    document.getElementById('grnDtlContainer').style.display = 'none';
 });

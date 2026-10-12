@@ -51,7 +51,8 @@ Ext.onReady(function () {
     // ------------------------------------------------------------
     var whrcvField = [
         { name: 'id' }, { name: 'ref_no' }, { name: 'received_date', type: 'date', dateFormat: 'Y-m-d' },
-        { name: 'grn_hdr_id' }, { name: 'grn_ref_no' }, { name: 'warehouse_id' }, { name: 'warehouse_name' },
+        { name: 'grn_hdr_id' }, { name: 'grn_ref_no' }, { name: 'supplier_do_no' }, { name: 'warehouse_id' },      // [NEW] supplier_do_no (dari GRN)
+         { name: 'warehouse_name' },
         { name: 'supplier_name' }, { name: 'status' }, { name: 'remark' },
         { name: 'total_amount', type: 'float' }, { name: 'total_txn', type: 'float' }, { name: 'currency_code' }
     ];
@@ -135,6 +136,7 @@ Ext.onReady(function () {
         columns: [
             { header: 'No. WH Rcv', dataIndex: 'ref_no', width: 120, renderer: CellWrap },
             { header: 'No. GRN', dataIndex: 'grn_ref_no', width: 120, renderer: CellWrap },
+            { header: 'No. DO Supplier', dataIndex: 'supplier_do_no', width: 130, renderer: function (v) { return CellWrap(v || '-'); } },      // [NEW] diturunkan dari GRN
             { header: 'Supplier', dataIndex: 'supplier_name', width: 170, renderer: CellWrap },
             { header: 'Gudang', dataIndex: 'warehouse_name', width: 120, renderer: CellWrap },
             { header: 'Tgl Terima', dataIndex: 'received_date', width: 90, renderer: Ext.util.Format.dateRenderer('d M Y') },

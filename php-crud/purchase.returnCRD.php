@@ -8,12 +8,20 @@
  *      min( qty RCV - sudah diretur dari RCV ini,  stok gudang - klaim retur lain berstatus Diajukan )
  *   Gudang TIDAK lagi difilter berdasarkan warehouses.project_id (gudang utama dipakai bersama).
  *
- * Alur   : Diajukan --(Kirim)--> Dikirim --(Selesaikan)--> Diganti | Kredit
- *          Diajukan --(Batalkan)--> Dibatalkan ; Dikirim --(Batal Kirim)--> Diajukan
- * Kirim  : membuat dokumen ISSUE W/H (material_out_header.issue_type = 'SUPPLIER_RETURN'),
+ * Alur   : Diajukan --(Perintahkan W/H)--> Diperintahkan --(W/H: Siap Kirim)--> Disiapkan
+ *          --(W/H: Konfirmasi Dikirim)--> Dikirim --(Selesaikan)--> Diganti | Kredit
+ *          Diajukan --(Batalkan)--> Dibatalkan ; Diperintahkan/Disiapkan --(Batalkan Perintah)--> Diajukan
+ *          Dikirim --(Batal Kirim)--> Diajukan (issue di-reverse, stok & jurnal dibalik)
+ * [CHANGED 2026-10-11] 'Kirim' dipecah: Pembelian hanya MEMERINTAHKAN issue (dokumen issue status 'pending',
+ *          stok belum keluar). Siap Kirim + Konfirmasi Dikirim dilakukan GUDANG di Warehouse Issuing
+ *          (warehouse.issuingCRD.php: prepare / deliver) -> di situlah stok keluar FIFO + jurnal dibuat.
+ * Order  : membuat dokumen ISSUE W/H (material_out_header.issue_type = 'SUPPLIER_RETURN'),
  *          stok keluar FIFO lewat stock_movements (reference_type 'MATERIAL_OUT', sama dengan Warehouse Issuing)
  *          sehingga tampil di Stock Card. Issue retur TIDAK menghitung kuota RAB +5%.
- * Action : list | detail | lookup_rcv | rcv_items | save | send | unsend | resolve | cancel | upload_evidence
+ * [NEW 2026-10-11] Jurnal otomatis (posted): Konfirmasi Dikirim di W/H -> Dr 2600 GRN Clearing / Cr 1500 Persediaan; Batal Kirim -> jurnal pembalik;
+ *                  Selesaikan 'Kredit' -> Dr 2100 Hutang Usaha / Cr 2600. 'Ganti Barang' tanpa jurnal (RCV pengganti sudah menjurnal).
+ *                  Mapping akun di fiscal_config (RETURN_SUPPLIER, RETURN_CREDIT_NOTE). Helper: php-func/journal.stock.php
+ * Action : list | detail | lookup_rcv | rcv_items | save | order | cancel_order | unsend | resolve | cancel | upload_evidence
  * Butuh  : sql/2026-10-09.issue_return_fix.sql + sql/2026-10-09b.return_from_rcv.sql
  */
 ob_start();
@@ -21,6 +29,7 @@ ini_set('display_errors', '0');
 require_once '../php-func/function.all.php';
 require_once '../php-class/crudClass.php';
 require_once '../php-func/function.stock.php';
+require_once '../php-func/journal.stock.php';     // [NEW 2026-10-11] jurnal otomatis (JrnPost / JrnReverseByRef)
 
 define('ISSUE_REF_TYPE', 'MATERIAL_OUT');        // harus sama dengan warehouse.issuingCRD.php
 define('ISSUE_TYPE_RETURN', 'SUPPLIER_RETURN');
@@ -36,7 +45,8 @@ try {
         case 'lookup_rcv':  RtLookupRcv(); break;   // [CHANGED] pengganti lookup proyek/supplier/gudang/PO/material
         case 'rcv_items':   RtRcvItems(); break;    // [CHANGED] item RCV + qty yang masih boleh diretur
         case 'save':        RtSave(); break;
-        case 'send':        RtSend(); break;
+        case 'order':       RtOrder(); break;          // [CHANGED] pengganti 'send': buat perintah issue (pending)
+        case 'cancel_order': RtCancelOrder(); break;   // [NEW] batalkan perintah issue sebelum dikirim
         case 'unsend':      RtUnsend(); break;
         case 'resolve':     RtResolve(); break;
         case 'cancel':      RtCancel(); break;
@@ -53,11 +63,13 @@ try {
 }
 
 /* ------------------------------------------------------------------ */
-// Qty yang sudah diklaim di retur lain berstatus Diajukan (belum keluar stok) -> dicadangkan
+// Qty yang sudah diklaim di retur lain yang stoknya BELUM keluar -> dicadangkan
+// [CHANGED] status yang dicadangkan: Diajukan / Diperintahkan / Disiapkan
 function RtOpenClaim($whId, $materialId, $exclHdrId) {
     $r = WhRow("SELECT COALESCE(SUM(d.qty_claim),0) AS q
                 FROM supplier_return_dtl d JOIN supplier_return_hdr h ON h.id=d.return_hdr_id
-                WHERE h.warehouse_id=$1 AND d.material_id=$2 AND h.status='Diajukan' AND h.id<>$3",
+                WHERE h.warehouse_id=$1 AND d.material_id=$2
+                  AND h.status IN ('Diajukan','Diperintahkan','Disiapkan') AND h.id<>$3",
                array((int)$whId, (int)$materialId, (int)$exclHdrId));
     return round((float)$r['q'], 4);
 }
@@ -104,6 +116,7 @@ function RtList() {
                            h.po_id, po.po_number, h.supplier_do_no, h.status, h.remark,
                            h.wh_receiving_hdr_id, rc.ref_no AS rcv_ref_no,
                            h.material_out_id, mo.ref_no AS issue_ref_no, h.sent_date, h.carrier,
+                           mo.status AS issue_status, mo.prepared_at, mo.delivery_note_no, mo.delivery_receiver, mo.delivery_proof,   -- [NEW]
                            h.resolution_type, h.resolution_date, h.credit_note_no, h.credit_amount, h.resolution_note,
                            COALESCE(t.line_count,0) AS line_count, COALESCE(t.total_qty,0) AS total_qty,
                            COALESCE(t.total_amount,0) AS total_amount
@@ -270,56 +283,80 @@ function RtSave() {
     WhOk('Retur supplier tersimpan. No: ' . $refNo, array('id' => $id, 'ref_no' => $refNo));
 }
 
-// Kirim = buat issue W/H (SUPPLIER_RETURN) + stok keluar FIFO
-function RtSend() {
+// [CHANGED] Perintahkan W/H = buat dokumen ISSUE W/H (issue_type 'SUPPLIER_RETURN') berstatus 'pending'.
+//           Stok dan jurnal BELUM berubah. Gudang menyiapkan barang berdasarkan dokumen ini, lalu mengonfirmasi
+//           pengiriman di Warehouse Issuing (IssPrepare / IssDeliver di warehouse.issuingCRD.php).
+function RtOrder() {
     WhRequirePost();
-    $id      = (int)WhPost('id');
-    $date    = WhDate(WhPost('sent_date'), 'Tanggal kirim');
-    $carrier = WhPost('carrier');
-    $userId  = WhUserId();
+    $id     = (int)WhPost('id');
+    $date   = WhDate(WhPost('order_date'), 'Tanggal perintah');
+    $userId = WhUserId();
     if ($id < 1) { throw new WhException('ID dokumen tidak valid.'); }
 
     WhQ('BEGIN');
     $h = WhRow('SELECT * FROM supplier_return_hdr WHERE id=$1 FOR UPDATE', array($id));
     if (!$h) { throw new WhException('Dokumen tidak ditemukan.'); }
-    if ($h['status'] !== 'Diajukan') { throw new WhException('Hanya retur berstatus Diajukan yang dapat dikirim.'); }
+    if ($h['status'] !== 'Diajukan') { throw new WhException('Hanya retur berstatus Diajukan yang dapat diperintahkan ke W/H.'); }
     $whId = (int)$h['warehouse_id'];
     $dtl = WhRows('SELECT id, material_id, qty_claim, defect_type FROM supplier_return_dtl WHERE return_hdr_id=$1 ORDER BY material_id, id', array($id));
     if (!count($dtl)) { throw new WhException('Retur belum memiliki item.'); }
 
-    $issRef = CreateRefNo('material_out_header', 'ref_no', 'RTS');
-    $mo = WhRow("INSERT INTO material_out_header
-                    (ref_no, project_id, warehouse_id, issue_date, issued_by, received_by_mandor, status, remark, issue_type)
-                 VALUES ($1,$2,$3,$4,$5,$6,'posted',$7,$8) RETURNING id",
-                array($issRef, (int)$h['project_id'], $whId, $date, $userId, $carrier,
-                      'Retur supplier ' . $h['ref_no'], ISSUE_TYPE_RETURN));
-    $moId = (int)$mo['id'];
-
+    // stok harus masih cukup (dikurangi klaim retur lain yang belum keluar stok)
+    $sum = array();
     foreach ($dtl as $d) {
         $mid = (int)$d['material_id'];
-        $qty = round((float)$d['qty_claim'], 4);
+        $sum[$mid] = round((isset($sum[$mid]) ? $sum[$mid] : 0) + (float)$d['qty_claim'], 4);
+    }
+    foreach ($sum as $mid => $tot) {
         WhLock($mid, $whId);
         $m = WhRow('SELECT material_name FROM materials WHERE id=$1', array($mid));
-        $onhand = WhOnHand($mid, $whId);
-        if ($qty > $onhand + 0.00005) {
-            throw new WhException('Stok ' . $m['material_name'] . ' di gudang (' . WhFmt($onhand) .
-                ') tidak cukup untuk dikirim (' . WhFmt($qty) . ').');
+        $avail = round(WhOnHand($mid, $whId) - RtOpenClaim($whId, $mid, $id), 4);
+        if ($tot > $avail + 0.00005) {
+            throw new WhException('Stok tersedia ' . $m['material_name'] . ' (' . WhFmt($avail) .
+                ') tidak cukup untuk diperintahkan (' . WhFmt($tot) . ').');
         }
-        $tot = 0.0;
-        foreach (WhFifoAllocate($mid, $whId, $qty) as $ly) {
-            WhQ("INSERT INTO material_out_items (material_out_id, material_id, qty_out, unit_cost, is_overbudget, notes)
-                 VALUES ($1,$2,$3,$4,'f',$5)",
-                array($moId, $mid, $ly['qty'], round($ly['unit_cost'], 2), 'Retur cacat: ' . $d['defect_type']));
-            WhPostMovement($date, $mid, $whId, 'OUT', $ly['qty'], $ly['unit_cost'], ISSUE_REF_TYPE, $moId, $issRef,
-                           'Retur supplier ' . $h['ref_no'], $userId);
-            $tot += $ly['qty'] * $ly['unit_cost'];
-        }
-        WhQ('UPDATE supplier_return_dtl SET unit_cost=$2 WHERE id=$1', array((int)$d['id'], round($tot / $qty, 4)));
     }
-    WhQ("UPDATE supplier_return_hdr SET status='Dikirim', material_out_id=$2, sent_date=$3, carrier=$4, updated_at=now() WHERE id=$1",
-        array($id, $moId, $date, $carrier));
+
+    $issRef = CreateRefNo('material_out_header', 'ref_no', 'RTS');
+    $mo = WhRow("INSERT INTO material_out_header
+                    (ref_no, project_id, warehouse_id, issue_date, issued_by, status, remark, issue_type)
+                 VALUES ($1,$2,$3,$4,$5,'pending',$6,$7) RETURNING id",
+                array($issRef, (int)$h['project_id'], $whId, $date, $userId,
+                      'Retur supplier ' . $h['ref_no'], ISSUE_TYPE_RETURN));
+    $moId = (int)$mo['id'];
+    // item rencana (belum ada biaya FIFO); diganti item aktual per layer saat Konfirmasi Dikirim
+    foreach ($dtl as $d) {
+        WhQ("INSERT INTO material_out_items (material_out_id, material_id, qty_out, unit_cost, is_overbudget, notes)
+             VALUES ($1,$2,$3,0,'f',$4)",
+            array($moId, (int)$d['material_id'], round((float)$d['qty_claim'], 4), 'Retur cacat: ' . $d['defect_type']));
+    }
+    WhQ("UPDATE supplier_return_hdr SET status='Diperintahkan', material_out_id=$2, updated_at=now() WHERE id=$1",
+        array($id, $moId));
     WhQ('COMMIT');
-    WhOk('Retur dikirim. Issue W/H: ' . $issRef, array('issue_ref_no' => $issRef));
+    WhOk('Perintah issue W/H dibuat: ' . $issRef . '. Menunggu gudang menyiapkan dan mengonfirmasi pengiriman.',
+         array('issue_ref_no' => $issRef));
+}
+
+// [NEW] Batalkan perintah issue (selama gudang belum mengonfirmasi dikirim): issue 'cancelled', retur kembali Diajukan
+function RtCancelOrder() {
+    WhRequirePost();
+    $id = (int)WhPost('id');
+    if ($id < 1) { throw new WhException('ID dokumen tidak valid.'); }
+    WhQ('BEGIN');
+    $h = WhRow('SELECT id, status, material_out_id FROM supplier_return_hdr WHERE id=$1 FOR UPDATE', array($id));
+    if (!$h) { throw new WhException('Dokumen tidak ditemukan.'); }
+    if ($h['status'] !== 'Diperintahkan' && $h['status'] !== 'Disiapkan') {
+        throw new WhException('Hanya retur berstatus Diperintahkan / Disiapkan yang dapat dibatalkan perintahnya (untuk Dikirim gunakan Batal Kirim).');
+    }
+    $moId = (int)$h['material_out_id'];
+    $mo = WhRow('SELECT status FROM material_out_header WHERE id=$1 FOR UPDATE', array($moId));
+    if ($mo && $mo['status'] !== 'pending' && $mo['status'] !== 'prepared') {
+        throw new WhException('Dokumen issue W/H sudah diproses gudang, tidak dapat dibatalkan dari sini.');
+    }
+    WhQ("UPDATE material_out_header SET status='cancelled' WHERE id=$1", array($moId));
+    WhQ("UPDATE supplier_return_hdr SET status='Diajukan', material_out_id=NULL, updated_at=now() WHERE id=$1", array($id));
+    WhQ('COMMIT');
+    WhOk('Perintah issue W/H dibatalkan. Retur kembali berstatus Diajukan.');
 }
 
 // Batal kirim: reverse issue W/H, retur kembali ke Diajukan
@@ -333,6 +370,8 @@ function RtUnsend() {
     if ($h['status'] !== 'Dikirim') { throw new WhException('Hanya retur berstatus Dikirim yang dapat dibatalkan pengirimannya.'); }
     $moId = (int)$h['material_out_id'];
     WhQ("UPDATE material_out_header SET status='reversed', reversed_at=now(), reversed_by=$2 WHERE id=$1", array($moId, WhUserId()));
+    // [NEW] jurnal pembalik pengiriman retur
+    JrnReverseByRef(JRN_REF_RETURN, $id, date('Y-m-d'), WhUserId(), 'Batal kirim retur');
     WhDeleteMovementsByRef(ISSUE_REF_TYPE, $moId);      // stok kembali ke gudang
     WhQ("UPDATE supplier_return_dtl SET unit_cost=0 WHERE return_hdr_id=$1", array($id));
     WhQ("UPDATE supplier_return_hdr SET status='Diajukan', material_out_id=NULL, sent_date=NULL, carrier=NULL, updated_at=now() WHERE id=$1",
@@ -363,6 +402,10 @@ function RtResolve() {
     WhQ("UPDATE supplier_return_hdr SET status=$2, resolution_type=$3, resolution_date=$4, credit_note_no=$5,
                 credit_amount=$6, resolution_note=$7, updated_at=now() WHERE id=$1",
         array($id, $newStatus, $type, $date, $type === 'Kredit' ? $cnNo : null, $type === 'Kredit' ? $cnAmt : null, $note));
+    // [NEW] hanya untuk Kredit: Dr Hutang Usaha (2100) / Cr GRN Clearing (2600); Ganti Barang tidak perlu jurnal
+    if ($type === 'Kredit') {
+        JrnPost('RETURN_CREDIT_NOTE', JRN_REF_RETURN, $id, $date, $cnAmt, 'Nota kredit ' . $cnNo, WhUserId());
+    }
     WhQ('COMMIT');
     WhOk('Retur diselesaikan dengan status ' . $newStatus . '.');
 }
