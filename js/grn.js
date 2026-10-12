@@ -1,5 +1,5 @@
 /*
-  Document      : grn00_5.js
+  Document      : grn.js
   Description   : Purchase GRN (Goods Receipt Note) - ExtJS 3.x Frontend Controller
   Backend       : /inv/php-crud/grnCRD.php
   Multi currency: GRN membekukan mata uang & kurs PO. Harga satuan GRN dalam mata uang PO (bisa diedit);
