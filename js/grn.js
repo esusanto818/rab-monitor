@@ -5,6 +5,8 @@
   Multi currency: GRN membekukan mata uang & kurs PO. Harga satuan GRN dalam mata uang PO (bisa diedit);
                   nilai dalam mata uang dasar (= harga x kurs PO) dihitung server dan dipakai WH Rcv.
                   GRN hanya bisa dibuat dari PO berstatus Disetujui.
+  [NEW 2026-10-12] No. DO Supplier (grn_hdr.supplier_do_no): diinput di sini, lalu diturunkan read-only ke W/H RCV dan Retur Pembelian
+                  (trace GRN -> W/H RCV -> Retur). Field dikirim lewat form submit (name 'supplier_do_no'); edit memuat via task read_edit.
 */
 
 Ext.onReady(function () {
@@ -52,7 +54,8 @@ Ext.onReady(function () {
         { name: 'po_id' }, { name: 'po_ref_no' }, { name: 'supplier_id' }, { name: 'supplier_name' },
         { name: 'status' }, { name: 'remark' },
         { name: 'total_qty', type: 'float' }, { name: 'total_amount', type: 'float' },
-        { name: 'currency_code' }, { name: 'exch_rate', type: 'float' }, { name: 'total_base', type: 'float' }
+        { name: 'currency_code' }, { name: 'exch_rate', type: 'float' }, { name: 'total_base', type: 'float' },
+        { name: 'supplier_do_no' }      // [NEW] No. DO Supplier
     ];
 
     var itemField = [
@@ -129,6 +132,7 @@ Ext.onReady(function () {
             { header: 'Tanggal', dataIndex: 'grn_date', width: 90, renderer: Ext.util.Format.dateRenderer('d M Y') },
             { header: 'No. PO', dataIndex: 'po_ref_no', width: 110, renderer: CellWrap },
             { header: 'Supplier', dataIndex: 'supplier_name', width: 170, renderer: CellWrap },
+            { header: 'No. DO Supplier', dataIndex: 'supplier_do_no', width: 130, renderer: function (v) { return CellWrap(v || '-'); } },      // [NEW]
             {
                 header: 'Total Qty', dataIndex: 'total_qty', width: 100, align: 'right',
                 renderer: function (v) { return Ext.util.Format.number(v || 0, '0,000.0000'); }
@@ -199,6 +203,7 @@ Ext.onReady(function () {
         var diff = code !== baseCode;
         var html = '<h3 class="detail-title">Detail Item GRN: ' + Ext.util.Format.htmlEncode(grnNo || '') + '</h3>' +
                    '<hr class="detail-hr" />' +
+                   '<div style="padding:4px 2px 10px 2px;">No. DO Supplier: <b>' + Ext.util.Format.htmlEncode((dataRecord && dataRecord.supplier_do_no) || '-') + '</b></div>' +      // [NEW]
                    '<table class="detail-table" width="100%" cellSpacing="0" cellPadding="0">' +
                    '<thead>' +
                    '<tr class="header-row">' +
@@ -392,6 +397,8 @@ Ext.onReady(function () {
     var fldGrnDate = new myDateField({ fieldLabel: 'Tgl GRN', id: 'grn_date', name: 'grn_date', allowBlank: false, value: new Date() });
     var fldSupplierIdHidden = new myTextField({ id: 'supplier_id_hidden', name: 'supplier_id', hidden: true });
     var fldRemark = new myTextArea({ fieldLabel: 'Keterangan', id: 'remark', name: 'remark' });
+    // [NEW] No. DO Supplier (nomor surat jalan dari supplier) -> acuan trace ke W/H RCV dan Retur Pembelian
+    var fldSupplierDo = new myTextField({ fieldLabel: 'No. DO Supplier', id: 'supplier_do_no', name: 'supplier_do_no', maxLength: 100 });
 
     var frmEditor = new stdForm({
         id: 'frmEditor',
@@ -402,7 +409,8 @@ Ext.onReady(function () {
             { columnWidth: .333, items: fldRefNo },
             { columnWidth: .333, items: fldGrnDate },
             { columnWidth: .333, items: fldPoHdr },
-            { columnWidth: 1, items: fldCurInfo },
+            { columnWidth: .333, items: fldSupplierDo },      // [NEW]
+            { columnWidth: .667, items: fldCurInfo },
             { columnWidth: 1, items: fldRemark },
             { items: fldSupplierIdHidden }
         ]
