@@ -11,6 +11,11 @@
 */
 
 Ext.onReady(function () {
+    // [FIX-DATE] Date.format('Y-m-d') Ext menghasilkan 'Y-10-13' di browser ini -> susun YYYY-MM-DD manual
+    function ymd(d) {
+        var m = d.getMonth() + 1, dd = d.getDate();
+        return d.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (dd < 10 ? '0' + dd : dd);
+    }
     Ext.QuickTips.init();
     document.getElementById("mainHeaderText").innerHTML = "Penerimaan <em>Fisik Gudang</em>";
 
@@ -641,7 +646,7 @@ Ext.onReady(function () {
                 task: 'create',
                 grn_hdr_id: grnHdrId,
                 warehouse_id: fldWarehouse.getValue(),
-                received_date: fldReceivedDate.getValue().format('Y-m-d'),
+                received_date: ymd(fldReceivedDate.getValue()),      // [FIX-DATE]
                 items: JSON.stringify(arrItems)
             },
             waitTitle: 'Menyimpan',

@@ -1,5 +1,5 @@
 /*
-  Document      : grn.js
+  Document      : grn00_5.js
   Description   : Purchase GRN (Goods Receipt Note) - ExtJS 3.x Frontend Controller
   Backend       : /inv/php-crud/grnCRD.php
   Multi currency: GRN membekukan mata uang & kurs PO. Harga satuan GRN dalam mata uang PO (bisa diedit);
@@ -7,6 +7,8 @@
                   GRN hanya bisa dibuat dari PO berstatus Disetujui.
   [NEW 2026-10-12] No. DO Supplier (grn_hdr.supplier_do_no): diinput di sini, lalu diturunkan read-only ke W/H RCV dan Retur Pembelian
                   (trace GRN -> W/H RCV -> Retur). Field dikirim lewat form submit (name 'supplier_do_no'); edit memuat via task read_edit.
+  [NEW 2026-10-12] Plat No. Kendaraan & Nama Driver (grn_hdr.vehicle_plate_no / driver_name, opsional) di form entry, grid, dan panel detail.
+                  Tombol 'Cetak Tanda Terima' di panel detail (task backend: read_grn_print) -> dokumen TANPA harga untuk driver/supplier.
 */
 
 Ext.onReady(function () {
@@ -55,7 +57,7 @@ Ext.onReady(function () {
         { name: 'status' }, { name: 'remark' },
         { name: 'total_qty', type: 'float' }, { name: 'total_amount', type: 'float' },
         { name: 'currency_code' }, { name: 'exch_rate', type: 'float' }, { name: 'total_base', type: 'float' },
-        { name: 'supplier_do_no' }      // [NEW] No. DO Supplier
+        { name: 'supplier_do_no' }, { name: 'vehicle_plate_no' }, { name: 'driver_name' }      // [NEW] No. DO Supplier, Plat No., Driver
     ];
 
     var itemField = [
@@ -133,6 +135,8 @@ Ext.onReady(function () {
             { header: 'No. PO', dataIndex: 'po_ref_no', width: 110, renderer: CellWrap },
             { header: 'Supplier', dataIndex: 'supplier_name', width: 170, renderer: CellWrap },
             { header: 'No. DO Supplier', dataIndex: 'supplier_do_no', width: 130, renderer: function (v) { return CellWrap(v || '-'); } },      // [NEW]
+            { header: 'Plat No.', dataIndex: 'vehicle_plate_no', width: 90, align: 'center', renderer: function (v) { return CellWrap(v || '-'); } },      // [NEW]
+            { header: 'Driver', dataIndex: 'driver_name', width: 110, renderer: function (v) { return CellWrap(v || '-'); } },      // [NEW]
             {
                 header: 'Total Qty', dataIndex: 'total_qty', width: 100, align: 'right',
                 renderer: function (v) { return Ext.util.Format.number(v || 0, '0,000.0000'); }
@@ -203,7 +207,11 @@ Ext.onReady(function () {
         var diff = code !== baseCode;
         var html = '<h3 class="detail-title">Detail Item GRN: ' + Ext.util.Format.htmlEncode(grnNo || '') + '</h3>' +
                    '<hr class="detail-hr" />' +
-                   '<div style="padding:4px 2px 10px 2px;">No. DO Supplier: <b>' + Ext.util.Format.htmlEncode((dataRecord && dataRecord.supplier_do_no) || '-') + '</b></div>' +      // [NEW]
+                   '<div style="padding:4px 2px 10px 2px;">No. DO Supplier: <b>' + Ext.util.Format.htmlEncode((dataRecord && dataRecord.supplier_do_no) || '-') + '</b>' +
+                   ' &nbsp;|&nbsp; Plat No.: <b>' + Ext.util.Format.htmlEncode((dataRecord && dataRecord.vehicle_plate_no) || '-') + '</b>' +
+                   ' &nbsp;|&nbsp; Driver: <b>' + Ext.util.Format.htmlEncode((dataRecord && dataRecord.driver_name) || '-') + '</b>' +
+                   '<button type="button" id="btnPrintGrn" style="float:right; padding:5px 14px; background:#2e6da4; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold;">Cetak Tanda Terima</button>' +
+                   '</div>' +      // [NEW] info DO / kendaraan / driver + tombol cetak
                    '<table class="detail-table" width="100%" cellSpacing="0" cellPadding="0">' +
                    '<thead>' +
                    '<tr class="header-row">' +
@@ -251,6 +259,90 @@ Ext.onReady(function () {
 
         grnDtlDiv.innerHTML = html;
         grnDtlDiv.style.display = 'block';
+        var pb = document.getElementById('btnPrintGrn'), printId = dataRecord ? dataRecord.id : 0;      // [NEW] tombol Cetak Tanda Terima
+        if (pb && printId) { pb.onclick = function () { printGrn(printId); }; }
+    }
+
+    // ------------------------------------------------------------
+    // 3b. [NEW] Cetak Tanda Terima GRN (tanpa harga). Jendela dibuka saat klik (lolos popup blocker),
+    //     data dari task 'read_grn_print', lalu HTML ditulis ke jendela dan window.print() dipanggil.
+    // ------------------------------------------------------------
+    var COMPANY_NAME = '';      // isi sama seperti di warehouse.issuing.js / purchase.return.js; kosong = baris tidak dicetak
+    var COMPANY_ADDR = '';
+
+    function grnEnc(v) { return Ext.util.Format.htmlEncode(v == null ? '' : v); }
+    function grnDmy(str) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(str || '');
+        return m ? (m[3] + '/' + m[2] + '/' + m[1]) : (str || '-');
+    }
+    // [FIX-DATE] Date.format('d/m/Y H:i') bermasalah di browser ini (token Y tidak terformat) -> susun manual
+    function grnNow() {
+        var d = new Date(), p2 = function (n) { return n < 10 ? '0' + n : n; };
+        return p2(d.getDate()) + '/' + p2(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+    }
+    function grnQty(v) { return Ext.util.Format.number(parseFloat(v) || 0, '0,000.0000').replace(/\.?0+$/, ''); }
+
+    function printGrn(grnId) {
+        var w = window.open('', '_blank', 'width=900,height=700');
+        if (!w) { Ext.Msg.alert('Popup Diblokir', 'Izinkan popup untuk situs ini, lalu klik Cetak Tanda Terima lagi.'); return; }
+        w.document.write('<html><body style="font-family:Arial,sans-serif;padding:20px;">Memuat Tanda Terima GRN...</body></html>');
+        Ext.Ajax.request({
+            url: '../php-crud/grnCRD.php',
+            method: 'POST',
+            params: { task: 'read_grn_print', grn_id: grnId },
+            success: function (response) {
+                var res;
+                try { res = Ext.util.JSON.decode(response.responseText); }
+                catch (e) { w.close(); Ext.Msg.alert('Gagal', 'Respons server tidak valid.'); return; }
+                if (!res.success) { w.close(); Ext.Msg.alert('Gagal', res.message || 'Gagal memuat data cetak.'); return; }
+                w.document.open();
+                w.document.write(buildGrnPrintHtml(res.data.header || {}, res.data.items || []));
+                w.document.close();
+                w.focus();
+                setTimeout(function () { w.print(); }, 400);
+            },
+            failure: function () { w.close(); Ext.Msg.alert('Gagal', 'Gagal menghubungi server.'); }
+        });
+    }
+
+    function buildGrnPrintHtml(h, items) {
+        var BLANK = '..............................';
+        var rows = '', no = 0;
+        Ext.each(items, function (i) {
+            no++;
+            var po = parseFloat(i.qty_po) || 0, cum = parseFloat(i.qty_cum) || 0;
+            rows += '<tr><td class="c">' + no + '</td><td>' + grnEnc(i.material_code || '') + '</td><td>' + grnEnc(i.item_name) + '</td>' +
+                    '<td class="r">' + grnQty(po) + '</td><td class="r"><b>' + grnQty(i.qty) + '</b></td><td class="r">' + grnQty(cum) + '</td>' +
+                    '<td class="r">' + grnQty(Math.max(po - cum, 0)) + '</td><td class="c">' + grnEnc(i.unit || '') + '</td><td>' + grnEnc(i.remark || '') + '</td></tr>';
+        });
+        var css = '@page{size:A4;margin:12mm;}body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#000;margin:0;}' +
+                  'h1{font-size:18px;margin:0 0 2px 0;text-align:center;letter-spacing:1px;}.sub{text-align:center;margin-bottom:10px;font-size:11px;}' +
+                  'table{border-collapse:collapse;width:100%;}.meta td{padding:2px 4px;vertical-align:top;}' +
+                  '.items th,.items td{border:1px solid #000;padding:5px 6px;}.items th{background:#eee;}' +
+                  '.c{text-align:center;}.r{text-align:right;}.sign td{width:33%;text-align:center;padding-top:6px;}' +
+                  '.sign .box{height:70px;}hr{border:0;border-top:2px solid #000;margin:8px 0;}';
+        return '<html><head><meta charset="utf-8"><title>Tanda Terima GRN ' + grnEnc(h.ref_no) + '</title><style>' + css + '</style></head><body>' +
+               (COMPANY_NAME ? '<div style="font-size:15px;font-weight:bold;text-align:center;">' + grnEnc(COMPANY_NAME) + '</div>' : '') +
+               (COMPANY_ADDR ? '<div class="sub">' + grnEnc(COMPANY_ADDR) + '</div>' : '') +
+               '<hr/><h1>TANDA TERIMA BARANG (GRN)</h1><div class="sub">Bukti penerimaan barang dari supplier</div>' +
+               '<table class="meta"><tr>' +
+               '<td width="16%">No. GRN</td><td width="34%">: <b>' + grnEnc(h.ref_no) + '</b></td>' +
+               '<td width="16%">Tanggal Terima</td><td width="34%">: ' + grnDmy(h.grn_date) + '</td></tr><tr>' +
+               '<td>Supplier</td><td>: <b>' + grnEnc(h.supplier_name || '-') + '</b></td>' +
+               '<td>No. DO Supplier</td><td>: <b>' + grnEnc(h.supplier_do_no || '-') + '</b></td></tr><tr>' +
+               '<td>No. PO</td><td>: ' + grnEnc(h.po_ref_no || '-') + (h.po_date ? ' (' + grnDmy(h.po_date) + ')' : '') + '</td>' +
+               '<td>Proyek</td><td>: ' + grnEnc(h.project_name || '-') + '</td></tr><tr>' +
+               '<td>Plat No. Kendaraan</td><td>: ' + (h.vehicle_plate_no ? grnEnc(h.vehicle_plate_no) : BLANK) + '</td>' +
+               '<td>Driver</td><td>: ' + (h.driver_name ? grnEnc(h.driver_name) : BLANK) + '</td></tr></table>' +
+               '<br/><table class="items"><thead><tr><th width="4%">No</th><th width="11%">Kode</th><th>Material</th><th width="9%">Qty PO</th>' +
+               '<th width="10%">Diterima</th><th width="10%">Akumulasi</th><th width="8%">Sisa</th><th width="6%">Sat</th><th width="14%">Keterangan</th></tr></thead><tbody>' + rows +
+               '</tbody></table><div style="margin-top:6px;">Total item: <b>' + no + '</b>' +
+               (h.remark ? ' &nbsp;|&nbsp; Catatan: ' + grnEnc(h.remark) : '') + '</div><br/>' +
+               '<table class="sign"><tr><td>Diterima oleh<br/>(Gudang)</td><td>Pengirim / Driver</td><td>Dibuat oleh<br/>(Admin)</td></tr>' +
+               '<tr><td class="box"></td><td class="box"></td><td class="box"></td></tr>' +
+               '<tr><td>(................................)</td><td>(' + (h.driver_name ? grnEnc(h.driver_name) : '................................') + ')</td>' +
+               '<td>(' + (h.created_by_name ? grnEnc(h.created_by_name) : '................................') + ')</td></tr></table>' +
+               '<div style="margin-top:14px;font-size:10px;color:#444;">Dicetak: ' + grnNow() + '</div></body></html>';
     }
 
     // ------------------------------------------------------------
@@ -399,6 +491,10 @@ Ext.onReady(function () {
     var fldRemark = new myTextArea({ fieldLabel: 'Keterangan', id: 'remark', name: 'remark' });
     // [NEW] No. DO Supplier (nomor surat jalan dari supplier) -> acuan trace ke W/H RCV dan Retur Pembelian
     var fldSupplierDo = new myTextField({ fieldLabel: 'No. DO Supplier', id: 'supplier_do_no', name: 'supplier_do_no', maxLength: 100 });
+    // [NEW] Plat No. Kendaraan & Nama Driver (opsional; backend merapikan plat jadi huruf besar)
+    var fldPlate = new myTextField({ fieldLabel: 'Plat No. Kendaraan', id: 'vehicle_plate_no', name: 'vehicle_plate_no', maxLength: 20,
+        listeners: { blur: function (f) { f.setValue(String(f.getValue() || '').toUpperCase()); } } });
+    var fldDriver = new myTextField({ fieldLabel: 'Nama Driver', id: 'driver_name', name: 'driver_name', maxLength: 100 });
 
     var frmEditor = new stdForm({
         id: 'frmEditor',
@@ -410,7 +506,9 @@ Ext.onReady(function () {
             { columnWidth: .333, items: fldGrnDate },
             { columnWidth: .333, items: fldPoHdr },
             { columnWidth: .333, items: fldSupplierDo },      // [NEW]
-            { columnWidth: .667, items: fldCurInfo },
+            { columnWidth: .333, items: fldPlate },      // [NEW]
+            { columnWidth: .333, items: fldDriver },      // [NEW]
+            { columnWidth: 1, items: fldCurInfo },
             { columnWidth: 1, items: fldRemark },
             { items: fldSupplierIdHidden }
         ]

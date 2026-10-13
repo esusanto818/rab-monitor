@@ -13,6 +13,11 @@
 
 Ext.onReady(function () {
     Ext.QuickTips.init();
+    // [FIX-DATE] Date.format('Y-m-d') Ext menghasilkan 'Y-10-13' di browser ini -> susun YYYY-MM-DD manual
+    function ymd(d) {
+        var m = d.getMonth() + 1, dd = d.getDate();
+        return d.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (dd < 10 ? '0' + dd : dd);
+    }
     document.getElementById("mainHeaderText").innerHTML = "RAB <i>Material</i>";
 
     var dataRecord = null;
@@ -518,7 +523,7 @@ Ext.onReady(function () {
         var token = ++rateReq;
         Ext.Ajax.request({
             url: '../php-crud/rabCRD.php', method: 'POST',
-            params: { task: 'get_exchange_rate', currency_id: cid, date: dt.format('Y-m-d') },
+            params: { task: 'get_exchange_rate', currency_id: cid, date: ymd(dt) },      // [FIX-DATE]
             success: function (response) {
                 if (token !== rateReq) return;
                 var res;
@@ -623,7 +628,7 @@ Ext.onReady(function () {
                 project_id: dataRecord.id,
                 currency_id: fCur ? fCur.getValue() : 0,
                 exch_rate: fRate ? (fRate.getValue() || 1) : 1,
-                rate_date: (fRateDate && fRateDate.getValue()) ? fRateDate.getValue().format('Y-m-d') : '',
+                rate_date: (fRateDate && fRateDate.getValue()) ? ymd(fRateDate.getValue()) : ''      /* [FIX-DATE] */,
                 items: Ext.util.JSON.encode(arrItems)
             },
             success: function (response) {

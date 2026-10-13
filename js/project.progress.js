@@ -47,6 +47,11 @@ Ext.onReady(function () {
         return (typeof formAccess !== 'undefined') ? formAccess : (window.formAccess || 0);
     }
     function enc(v) { return Ext.util.Format.htmlEncode(v == null ? '' : v); }
+    // [FIX-DATE] Date.format('Y-m-d') Ext menghasilkan 'Y-10-13' di browser ini -> susun YYYY-MM-DD manual
+    function ymd(d) {
+        var m = d.getMonth() + 1, dd = d.getDate();
+        return d.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (dd < 10 ? '0' + dd : dd);
+    }
     function fmtAmt(v) { return Ext.util.Format.number(v || 0, '0,000.00'); }
     function fmtCpi(v) { return (v === null || v === undefined) ? '-' : Ext.util.Format.number(v, '0.00'); }
 
@@ -373,7 +378,7 @@ Ext.onReady(function () {
                     if (Ext.util.Format.trim(fEvid.getValue() || '') !== '') { lines.push(Ext.util.Format.trim(fEvid.getValue())); }
                     if (!lines.length) { Ext.Msg.alert('Peringatan', 'Bukti wajib: unggah foto / PDF atau isi no. BAP.'); return; }
                     var params = {      // ambil nilai sebelum window ditutup
-                        task: 'submit_claim', project_id: proj.id, report_date: fDate.getValue().format('Y-m-d'),
+                        task: 'submit_claim', project_id: proj.id, report_date: ymd(fDate.getValue()),      // [FIX-DATE]
                         percent_claimed: fPct.getValue(), evidence_ref: lines.join('\n'), note: fNote.getValue()
                     };
                     ajax(params, function (res) {
