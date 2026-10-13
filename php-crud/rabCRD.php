@@ -20,6 +20,14 @@
  *   dalam mata uang dasar) dikonversi ke mata uang anggaran memakai kurs anggaran.
  *   Mata uang tidak bisa diganti bila proyek sudah punya PO (non-batal) atau pemakaian material.
  *   Butuh sql/2026-10-01.rab_currency.sql.
+ * - [NEW 2026-10-12] PLAFON = projects.contract_value (mata uang dasar). Aturan:
+ *     1) budget proyek (x kurs anggaran) tidak boleh melebihi nilai kontrak;
+ *     2) total RAB (x kurs anggaran) tidak boleh melebihi nilai kontrak (batas keras, divalidasi server);
+ *     3) proyek 'Belum Mulai'  : total RAB <= budget proyek;
+ *        proyek sudah jalan    : total RAB boleh melewati budget -> selisihnya MEMAKAI CADANGAN (kontrak - budget),
+ *                                baris yang ditambah / dinaikkan wajib beralasan dan ditandai budget_items.is_addendum.
+ *     RAB_REQUIRE_CONTRACT = true -> RAB tidak bisa disimpan bila nilai kontrak belum diisi.
+ *     Butuh sql/2026-10-12.rab_addendum.sql (kolom is_addendum, addendum_reason, addendum_by, addendum_at).
  * - Butuh migration_rab_budget_items.sql (unique index project_id+material_id
  *   utk category='Material') supaya ON CONFLICT di save_rab berfungsi.
  * ============================================================
@@ -28,6 +36,22 @@
 require_once __DIR__ . '/../php-func/function.all.php';
 require_once __DIR__ . '/../php-class/crudClass.php';
 require_once __DIR__ . '/../php-func/fx.func.php';
+
+const RAB_REQUIRE_CONTRACT = true;     // [NEW] true = RAB wajib punya nilai kontrak (plafon) sebelum disimpan
+const RAB_EPS_VAL = 0.01;              // [NEW] toleransi nilai (pembulatan)
+const RAB_EPS_QTY = 0.00005;           // [NEW] toleransi qty
+class RabBusinessError extends Exception {}      // [NEW] pelanggaran aturan bisnis -> pesan apa adanya ke pengguna
+
+/** [NEW] Potong teks maks $len karakter (aman tanpa ekstensi mbstring). */
+function mb_strlen_safe($str, $len) {
+    $str = (string)$str;
+    if (function_exists('mb_substr')) return mb_substr($str, 0, $len, 'UTF-8');
+    $chars = preg_split('//u', $str, -1, PREG_SPLIT_NO_EMPTY);
+    return $chars === false ? substr($str, 0, $len) : implode('', array_slice($chars, 0, $len));
+}
+
+/** [NEW] Format angka untuk pesan error (1.234.567,89). */
+function rab_fmt($n): string { return number_format((float)$n, 2, ',', '.'); }
 
 session_start();
 header('Content-Type: application/json');
@@ -105,6 +129,8 @@ try {
 
             $sql = RAB_USAGE_CTE . "
                 SELECT p.id, p.name, c.name AS client_name, p.status,
+                       COALESCE(p.contract_value, 0) AS contract_value,      -- [NEW] plafon
+                       COALESCE(p.budget, 0) * COALESCE(NULLIF(p.budget_exch_rate, 0), 1) AS budget_base,      -- [NEW] budget setara mata uang dasar
                        COALESCE(UPPER(TRIM(cur.init)), 'IDR') AS currency_code,
                        COALESCE(NULLIF(p.budget_exch_rate, 0), 1) AS budget_exch_rate,
                        COALESCE(agg.material_count, 0) AS material_count,
@@ -155,6 +181,8 @@ try {
                 $p['total_budget_base'] = (float)$p['total_budget_base'];
                 $p['total_actual_cost'] = (float)$p['total_actual_cost'];
                 $p['budget_exch_rate'] = (float)$p['budget_exch_rate'];
+                $p['contract_value'] = (float)$p['contract_value'];      // [NEW]
+                $p['budget_base'] = (float)$p['budget_base'];      // [NEW]
             }
             sendJsonResponse(true, ['data' => $projects, 'totalCount' => $totalCount]);
             break;
@@ -200,7 +228,8 @@ try {
             if ($projectId <= 0) sendJsonResponse(false, [], 'ID Proyek tidak valid.');
 
             $stmtP = $db->prepare("SELECT p.name, p.budget_currency_id, COALESCE(NULLIF(p.budget_exch_rate, 0), 1) AS budget_exch_rate,
-                                          p.budget_rate_date, UPPER(TRIM(cur.init)) AS currency_code
+                                          p.budget_rate_date, UPPER(TRIM(cur.init)) AS currency_code,
+                                          p.status AS project_status, COALESCE(p.budget, 0) AS budget, COALESCE(p.contract_value, 0) AS contract_value      -- [NEW] plafon
                                      FROM public.projects p
                                      LEFT JOIN public.m_currency cur ON cur.id = p.budget_currency_id
                                     WHERE p.id = :id");
@@ -227,6 +256,7 @@ try {
                        COALESCE(bi.qty_plan, 0) AS budget_qty,
                        COALESCE(bi.unit_price_plan, 0) AS unit_price,
                        COALESCE(bi.tolerance_pct, 0) AS tolerance_pct,
+                       bi.is_addendum, bi.addendum_reason, bi.addendum_at,      -- [NEW] penanda tambahan (pakai cadangan)
                        COALESCE(u.qty_out, 0) AS total_qty_out,
                        (COALESCE(bi.qty_plan,0) - COALESCE(u.qty_out, 0)) AS remaining_qty,
                        CASE WHEN COALESCE(bi.qty_plan,0) > 0
@@ -256,8 +286,31 @@ try {
                 $item['total_qty_out'] = (float)$item['total_qty_out'];
                 $item['remaining_qty'] = (float)$item['remaining_qty'];
                 $item['usage_pct'] = (float)$item['usage_pct'];
+                $item['is_addendum'] = ($item['is_addendum'] === true || $item['is_addendum'] === 't' || $item['is_addendum'] === '1');      // [NEW]
             }
-            sendJsonResponse(true, ['name' => $projectName, 'items' => $items, 'currency' => $currencyInfo]);
+
+            // [NEW] Ringkasan plafon: nilai kontrak (dasar), budget, cadangan, pemakaian cadangan oleh RAB saat ini
+            $rate       = (float)$proj['budget_exch_rate'];
+            $contract   = (float)$proj['contract_value'];
+            $budgetCur  = (float)$proj['budget'];
+            $budgetBase = round($budgetCur * $rate, 2);
+            $rabCur     = 0.0;
+            foreach ($items as $it) { $rabCur += round($it['budget_qty'] * $it['unit_price'], 2); }
+            $rabBase    = round($rabCur * $rate, 2);
+            $plafon = [
+                'contract_value'    => $contract,
+                'budget'            => $budgetCur,
+                'budget_base'       => $budgetBase,
+                'project_status'    => $proj['project_status'],
+                'phase'             => ($proj['project_status'] === 'Belum Mulai') ? 'planning' : 'running',
+                'reserve_total'     => $contract > 0 ? max($contract - $budgetBase, 0) : 0,
+                'rab_total'         => $rabCur,
+                'rab_total_base'    => $rabBase,
+                'reserve_used'      => $budgetCur > 0 ? max($rabBase - $budgetBase, 0) : 0,
+                'reserve_remaining' => $contract > 0 ? max($contract - max($budgetBase, $rabBase), 0) : 0,
+                'require_contract'  => RAB_REQUIRE_CONTRACT,
+            ];
+            sendJsonResponse(true, ['name' => $projectName, 'items' => $items, 'currency' => $currencyInfo, 'plafon' => $plafon]);
             break;
 
         /* ------------------------------------------------------------------
@@ -301,6 +354,70 @@ try {
 
             $db->beginTransaction();
             try {
+                // ---- [NEW] PLAFON: kunci baris proyek agar dua penyimpanan bersamaan tidak sama-sama lolos cek
+                $stP = $db->prepare("SELECT status, COALESCE(budget, 0) AS budget, COALESCE(contract_value, 0) AS contract_value
+                                       FROM public.projects WHERE id = :id FOR UPDATE");
+                $stP->execute([':id' => $projectId]);
+                $pj = $stP->fetch(PDO::FETCH_ASSOC);
+                $contract   = (float)$pj['contract_value'];
+                $budgetCur  = (float)$pj['budget'];
+                $running    = ($pj['status'] !== 'Belum Mulai');
+
+                // RAB yang tersimpan saat ini (pembanding untuk mendeteksi baris baru / dinaikkan)
+                $stOld = $db->prepare("SELECT material_id, qty_plan, unit_price_plan FROM public.budget_items
+                                        WHERE project_id = :p AND category = 'Material' AND material_id IS NOT NULL");
+                $stOld->execute([':p' => $projectId]);
+                $old = [];
+                foreach ($stOld->fetchAll(PDO::FETCH_ASSOC) as $o) {
+                    $old[(int)$o['material_id']] = ['qty' => (float)$o['qty_plan'], 'price' => (float)$o['unit_price_plan']];
+                }
+
+                $totalCur = 0.0; $flags = [];      // $flags[material_id] = true bila baris baru / nilainya naik
+                foreach ($items as $item) {
+                    $mid = (int)($item['material_id'] ?? 0);
+                    $q   = (float)($item['budget_qty'] ?? 0);
+                    $pr  = (float)($item['unit_price'] ?? 0);
+                    if ($mid <= 0 || $q <= 0) continue;
+                    $val = round($q * $pr, 2);
+                    $totalCur += $val;
+                    $oldVal = isset($old[$mid]) ? round($old[$mid]['qty'] * $old[$mid]['price'], 2) : 0.0;
+                    $flags[$mid] = !isset($old[$mid]) || $q > $old[$mid]['qty'] + RAB_EPS_QTY || $val > $oldVal + RAB_EPS_VAL;
+                }
+                $totalBase  = round($totalCur * $exchRate, 2);        // total RAB setara mata uang dasar
+                $budgetBase = round($budgetCur * $exchRate, 2);       // budget proyek setara mata uang dasar
+
+                if ($contract <= 0 && RAB_REQUIRE_CONTRACT) {
+                    throw new RabBusinessError('Nilai Kontrak (plafon) proyek belum diisi. Isi dulu di Master Proyek sebelum menyusun RAB.');
+                }
+                if ($contract > 0) {
+                    if ($budgetBase > $contract + RAB_EPS_VAL) {
+                        throw new RabBusinessError('Budget proyek (setara ' . rab_fmt($budgetBase) . ') melebihi Nilai Kontrak (' . rab_fmt($contract) . '). Perbaiki di Master Proyek.');
+                    }
+                    if ($totalBase > $contract + RAB_EPS_VAL) {
+                        throw new RabBusinessError('Total RAB setara ' . rab_fmt($totalBase) . ' melebihi Nilai Kontrak / plafon (' . rab_fmt($contract) .
+                                                   '). Kelebihan ' . rab_fmt($totalBase - $contract) . '. Kurangi qty / harga.');
+                    }
+                }
+                if (!$running && $budgetCur > 0 && $totalBase > $budgetBase + RAB_EPS_VAL) {
+                    throw new RabBusinessError('Total RAB setara ' . rab_fmt($totalBase) . ' melebihi Budget proyek (' . rab_fmt($budgetBase) .
+                                               '). Cadangan baru bisa dipakai setelah proyek berstatus Berjalan.');
+                }
+                // proyek berjalan & total RAB melewati budget -> cadangan terpakai; baris tambahan wajib beralasan
+                $usesReserve = $running && $budgetCur > 0 && $totalBase > $budgetBase + RAB_EPS_VAL;
+                $userId = (int)($_SESSION['user_id'] ?? 0);
+                $addInfo = [];      // [material_id => ['flag' => 0/1, 'reason' => string]]
+                foreach ($items as $item) {
+                    $mid = (int)($item['material_id'] ?? 0);
+                    if ($mid <= 0 || (float)($item['budget_qty'] ?? 0) <= 0) continue;
+                    $reason = trim((string)($item['addendum_reason'] ?? ''));
+                    $isAdd  = $usesReserve && !empty($flags[$mid]);
+                    if ($isAdd && $reason === '') {
+                        throw new RabBusinessError('Penambahan RAB yang memakai cadangan wajib diisi alasannya. Cadangan terpakai: ' .
+                                                   rab_fmt($totalBase - $budgetBase) . ' dari ' . rab_fmt(max($contract - $budgetBase, 0)) . '.');
+                    }
+                    $addInfo[$mid] = ['flag' => $isAdd ? 1 : 0, 'reason' => $isAdd ? mb_strlen_safe($reason, 500) : ''];
+                }
+
                 $stmtProj = $db->prepare("UPDATE public.projects
                                              SET budget_currency_id = :c, budget_exch_rate = :r, budget_rate_date = CAST(:d AS date)
                                            WHERE id = :id");
@@ -311,9 +428,12 @@ try {
                 // item_name (NOT NULL di budget_items) diambil dari materials.material_name.
                 $stmtUpsert = $db->prepare("
                     INSERT INTO public.budget_items
-                        (project_id, material_id, category, item_name, unit, qty_plan, unit_price_plan, tolerance_pct, created_at)
+                        (project_id, material_id, category, item_name, unit, qty_plan, unit_price_plan, tolerance_pct, created_at,
+                         is_addendum, addendum_reason, addendum_by, addendum_at)
                     SELECT :project_id, :material_id, 'Material', m.material_name, m.unit,
-                           :budget_qty, :unit_price, :tolerance_pct, NOW()
+                           :budget_qty, :unit_price, :tolerance_pct, NOW(),
+                           (CAST(:is_add AS integer) = 1), NULLIF(:reason, ''), CAST(NULLIF(:by, '') AS integer),
+                           CASE WHEN CAST(:is_add AS integer) = 1 THEN NOW() END      -- [NEW] penanda tambahan
                       FROM public.materials m WHERE m.id = :material_id
                     ON CONFLICT (project_id, material_id) WHERE category = 'Material' AND material_id IS NOT NULL
                     DO UPDATE SET
@@ -321,7 +441,12 @@ try {
                         unit_price_plan = EXCLUDED.unit_price_plan,
                         tolerance_pct = EXCLUDED.tolerance_pct,
                         item_name = EXCLUDED.item_name,
-                        unit = EXCLUDED.unit
+                        unit = EXCLUDED.unit,
+                        -- [NEW] penanda tambahan: sekali ditandai tetap tertandai; alasan/pencatat/waktu diperbarui hanya bila ada tambahan baru
+                        is_addendum = (budget_items.is_addendum OR EXCLUDED.is_addendum),
+                        addendum_reason = CASE WHEN EXCLUDED.is_addendum THEN EXCLUDED.addendum_reason ELSE budget_items.addendum_reason END,
+                        addendum_by = CASE WHEN EXCLUDED.is_addendum THEN EXCLUDED.addendum_by ELSE budget_items.addendum_by END,
+                        addendum_at = CASE WHEN EXCLUDED.is_addendum THEN EXCLUDED.addendum_at ELSE budget_items.addendum_at END
                 ");
 
                 foreach ($items as $item) {
@@ -334,7 +459,9 @@ try {
                         $activeMaterialIds[] = $materialId;
                         $ok = $stmtUpsert->execute([
                             ':project_id' => $projectId, ':material_id' => $materialId,
-                            ':budget_qty' => $budgetQty, ':unit_price' => $unitPrice, ':tolerance_pct' => $tolerance
+                            ':budget_qty' => $budgetQty, ':unit_price' => $unitPrice, ':tolerance_pct' => $tolerance,
+                            ':is_add' => $addInfo[$materialId]['flag'] ?? 0, ':reason' => $addInfo[$materialId]['reason'] ?? '',      // [NEW]
+                            ':by' => $userId > 0 ? (string)$userId : ''
                         ]);
                         if (!$ok || $stmtUpsert->rowCount() === 0) {
                             throw new Exception("Material (id {$materialId}) tidak ditemukan di master materials.");
@@ -362,7 +489,15 @@ try {
                 }
 
                 $db->commit();
-                sendJsonResponse(true, [], 'RAB material berhasil disimpan.');
+                $msg = 'RAB material berhasil disimpan.';
+                if ($usesReserve) {      // [NEW] info pemakaian cadangan
+                    $msg .= ' Cadangan terpakai ' . rab_fmt($totalBase - $budgetBase) . ' dari ' . rab_fmt(max($contract - $budgetBase, 0)) .
+                            ' (sisa ' . rab_fmt(max($contract - $totalBase, 0)) . ').';
+                }
+                sendJsonResponse(true, [], $msg);
+            } catch (RabBusinessError $e) {      // [NEW] pelanggaran plafon / budget: pesan apa adanya
+                if ($db->inTransaction()) { $db->rollBack(); }
+                sendJsonResponse(false, [], $e->getMessage());
             } catch (Throwable $e) {
                 if ($db->inTransaction()) { $db->rollBack(); }
                 sendJsonResponse(false, [], 'Gagal menyimpan RAB: ' . $e->getMessage());

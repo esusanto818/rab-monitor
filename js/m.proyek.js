@@ -5,6 +5,8 @@
   Perubahan     : - [BARU] field Budget, Nilai Kontrak, Progress di form
                   - [BARU] handler failure & exception store (pesan error eksplisit)
                   - [FIX PIC] daftar PIC kini dari m_employee (diatur di backend)
+                  - [NEW 2026-10-12] Nilai Kontrak = PLAFON. Budget (x kurs anggaran) tidak boleh melebihi Nilai Kontrak; selisihnya
+                    = CADANGAN (tampil otomatis di form & grid), dipakai saat proyek berjalan (lihat RAB). Server memvalidasi ulang.
 */
 
 Ext.onReady(function () {
@@ -16,6 +18,8 @@ Ext.onReady(function () {
     var CRD = '../php-crud/m.proyekCRD.php';
     var task = '';
     var dataRecord = null;
+    var curRate = 1;      // [NEW] kurs anggaran proyek yang sedang diedit (baru = 1)
+    var fmtRp = function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); };
 
     // [BARU] listener exception untuk semua store
     function storeException(proxy, type, action, options, response) {
@@ -75,6 +79,7 @@ Ext.onReady(function () {
         { name: 'end_date', type: 'date', dateFormat: 'Y-m-d' },
         { name: 'budget', type: 'float' }, { name: 'contract_value', type: 'float' },   // [BARU] contract_value
         { name: 'spent', type: 'float' },
+        { name: 'budget_exch_rate', type: 'float' }, { name: 'budget_currency_code' },      // [NEW]
         { name: 'progress', type: 'int' }, { name: 'status' }, { name: 'notes' }
     ];
 
@@ -99,13 +104,21 @@ Ext.onReady(function () {
             { header: 'Lokasi', dataIndex: 'location_name', width: 140, renderer: CellWrap },
             { header: 'Tgl Mulai', dataIndex: 'start_date', width: 90, renderer: Ext.util.Format.dateRenderer('d/m/Y') },
             { header: 'Tgl Selesai', dataIndex: 'end_date', width: 90, renderer: Ext.util.Format.dateRenderer('d/m/Y') },
-            {
-                header: 'Plafon Budget', dataIndex: 'budget', width: 130, align: 'right',
-                renderer: function (v) { return 'Rp ' + Ext.util.Format.number(v || 0, '0,000.00'); }
+            {   // [CHANGED] 'Plafon Budget' -> 'Budget' (plafon = Nilai Kontrak); tampil dengan mata uang anggaran
+                header: 'Budget', dataIndex: 'budget', width: 130, align: 'right',
+                renderer: function (v, meta, rec) { return (rec.get('budget_currency_code') || 'IDR') + ' ' + fmtRp(v); }
             },
-            {   // [BARU] kolom nilai kontrak
-                header: 'Nilai Kontrak', dataIndex: 'contract_value', width: 130, align: 'right',
-                renderer: function (v) { return 'Rp ' + Ext.util.Format.number(v || 0, '0,000.00'); }
+            {   // [CHANGED] Nilai Kontrak = PLAFON (mata uang dasar)
+                header: 'Nilai Kontrak (Plafon)', dataIndex: 'contract_value', width: 140, align: 'right',
+                renderer: function (v) { return 'Rp ' + fmtRp(v); }
+            },
+            {   // [NEW] Cadangan = Nilai Kontrak - Budget (setara mata uang dasar)
+                header: 'Cadangan', dataIndex: 'contract_value', width: 130, align: 'right',
+                renderer: function (v, meta, rec) {
+                    if (!(v > 0)) return '-';
+                    var r = v - (rec.get('budget') || 0) * (rec.get('budget_exch_rate') || 1);
+                    return '<span style="color:' + (r < 0 ? '#ff6b5e' : '#7fe0a0') + ';">Rp ' + fmtRp(r) + '</span>';
+                }
             },
             { header: 'Progress (%)', dataIndex: 'progress', width: 90, align: 'center', renderer: function(v){ return (v || 0) + '%'; } },
             { header: 'Status', dataIndex: 'status', width: 100, align: 'center' }
@@ -134,9 +147,23 @@ Ext.onReady(function () {
     var fldEndDate = new Ext.form.DateField({ fieldLabel: 'Tgl Selesai', id: 'end_date', name: 'end_date', format: 'Y-m-d', width: 140 });
     var fldStatus = new myComboField({ fieldLabel: 'Status', id: 'status', name: 'status', hiddenName: 'status', store: statusDs, displayField: 'name', valueField: 'id', value: 'Berjalan' });
     // [BARU] field angka yang sebelumnya tidak ada di form
-    var fldBudget = new myNumberField({ fieldLabel: 'Plafon Budget', id: 'budget', name: 'budget', decimalPrecision: 2, value: 0, width: 140 });
-    var fldContract = new myNumberField({ fieldLabel: 'Nilai Kontrak', id: 'contract_value', name: 'contract_value', decimalPrecision: 2, value: 0, width: 140 });
-    var fldProgress = new myNumberField({ fieldLabel: 'Progress (%)', id: 'progress', name: 'progress', decimalPrecision: 0, minValue: 0, maxValue: 100, value: 0, width: 80 });
+    // [CHANGED] Budget harus <= Nilai Kontrak (plafon); selisih = Cadangan (dihitung otomatis)
+    var fldBudget = new myNumberField({ fieldLabel: 'Budget', id: 'budget', name: 'budget', decimalPrecision: 2, value: 0, width: 140,
+        enableKeyEvents: true, listeners: { change: function () { updateReserve(); }, keyup: function () { updateReserve(); } } });
+    var fldContract = new myNumberField({ fieldLabel: 'Nilai Kontrak (Plafon)', id: 'contract_value', name: 'contract_value', decimalPrecision: 2, value: 0, width: 140,
+        enableKeyEvents: true, listeners: { change: function () { updateReserve(); }, keyup: function () { updateReserve(); } } });
+    var fldReserve = new Ext.form.DisplayField({ fieldLabel: 'Cadangan', value: '-' });      // [NEW]
+
+    // [NEW] Cadangan = Nilai Kontrak - Budget x kurs anggaran; merah bila budget melebihi nilai kontrak
+    function updateReserve() {
+        var b = parseFloat(fldBudget.getValue()) || 0, c = parseFloat(fldContract.getValue()) || 0, bb = b * curRate;
+        if (c <= 0) { fldReserve.setValue('<span style="color:#e6a817;">isi Nilai Kontrak</span>'); return; }
+        var r = c - bb;
+        fldReserve.setValue(r < 0 ? '<span style="color:#ff6b5e;">Budget melebihi Nilai Kontrak (' + fmtRp(-r) + ')</span>'
+                                  : '<b>' + fmtRp(r) + '</b>');
+    }
+    // [CHANGED] read-only: progress hanya berubah lewat menu Progress Proyek (klaim + verifikasi)
+    var fldProgress = new myNumberField({ fieldLabel: 'Progress Terverifikasi (%)', id: 'progress', name: 'progress', decimalPrecision: 0, value: 0, width: 80, readOnly: true });
     var fldNotes = new Ext.form.TextArea({
         fieldLabel: 'Catatan',
         id: 'notes',
@@ -157,6 +184,7 @@ Ext.onReady(function () {
                 fldStatus,
                 fldBudget,      // [BARU]
                 fldContract,    // [BARU]
+                fldReserve,     // [NEW] cadangan otomatis
                 fldProgress,    // [BARU]
                 { columnWidth: 1, items: FieldSpace }
             ] }
@@ -167,6 +195,7 @@ Ext.onReady(function () {
     document.getElementById('addData').onclick = function () {
         task = 'create';
         frmEditor.getForm().reset();
+        curRate = 1; updateReserve();      // [NEW]
         document.getElementById('editorWdw').style.display = 'block';
         document.getElementById('editorFormHeaderText').innerHTML = '&nbsp;&nbsp;Tambah Proyek Baru';
     };
@@ -189,6 +218,7 @@ Ext.onReady(function () {
                 fldStatus.setValue(d.status);
                 fldBudget.setValue(d.budget);               // [BARU]
                 fldContract.setValue(d.contract_value);     // [BARU]
+                curRate = parseFloat(d.budget_exch_rate) || 1; updateReserve();      // [NEW] cadangan dengan kurs tersimpan
                 fldProgress.setValue(d.progress);           // [BARU]
             },
             failure: function () {
@@ -199,6 +229,11 @@ Ext.onReady(function () {
 
     document.getElementById('saveEdit').onclick = function () {
         if (!frmEditor.getForm().isValid()) return;
+        var cv = parseFloat(fldContract.getValue()) || 0, bv = (parseFloat(fldBudget.getValue()) || 0) * curRate;
+        if (cv > 0 && bv > cv + 0.01) {      // [NEW] cek cepat di klien (server memvalidasi ulang)
+            Ext.Msg.alert('Peringatan', 'Budget (setara ' + fmtRp(bv) + ') tidak boleh melebihi Nilai Kontrak (' + fmtRp(cv) + ').');
+            return;
+        }
         frmEditor.getForm().submit({
             url: CRD,
             method: 'POST',
