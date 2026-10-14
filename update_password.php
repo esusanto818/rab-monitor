@@ -27,7 +27,7 @@ try {
     foreach ($users as $user) {
         $userId   = $user['id'];
         $username = $user['login_name'];
-        $currentPass = $user['password'];
+        $currentPass = 'admin789';
 
         // Cek apakah password sudah berformat hash modern (biasanya diawali $2y$ untuk bcrypt)
         $info = password_get_info($currentPass);

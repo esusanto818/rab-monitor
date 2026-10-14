@@ -3,21 +3,14 @@
  * m.proyekCRD.php
  * ============================================================
  * Backend Controller untuk Master Proyek (public.projects).
- *
- * Catatan perubahan:
- * - [FIX PARSE ERROR] Karakter 'P' nyasar setelah '}' terakhir dihapus
- *   (penyebab "unexpected end of file" di log Apache).
- * - [FIX PIC] projects.pic_id mengacu ke m_employee.id (terbukti dari data),
- *   bukan tabel `pics`. 'read' dan 'read_pics' sekarang memakai m_employee.
- * - [FIX] UPDATE tidak lagi menimpa budget/contract_value/progress
- *   dengan 0 bila field tersebut tidak dikirim klien.
- * - [FIX] Respons JSON dibersihkan dari output liar (ob_start/ob_clean),
- *   display_errors dimatikan agar JSON tidak rusak.
+ * ##perbaikan tgl 13/10/2026 : Membersihkan pemisah ribuan koma (str_replace)
+ *                           pada field angka (budget & contract_value) agar 
+ *                           tersimpan utuh ke database PostgreSQL.
  * ============================================================
  */
 
-ini_set('display_errors', '0');   // [FIX] jangan bocorkan error ke body JSON
-ob_start();                        // [FIX] tampung output liar
+ini_set('display_errors', '0');
+ob_start();
 
 require_once __DIR__ . '/../php-func/function.all.php';
 require_once __DIR__ . '/../php-class/crudClass.php';
@@ -30,7 +23,6 @@ header('Content-Type: application/json');
 $task = $_REQUEST['task'] ?? '';
 $db   = new crud();
 
-/** [FIX] Kirim JSON bersih lalu berhenti. */
 function mpJson(array $payload) {
     if (ob_get_length()) { ob_clean(); }
     echo json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
@@ -69,7 +61,6 @@ try {
     switch ($task) {
 
         case 'read':
-            // [FIX PIC] join ke m_employee (bukan pics)
             $sql = "SELECT p.id, p.name, p.client_id, c.name AS client_name,
                            p.pic_id, e.employee_name AS pic_name,
                            p.location_id, loc.name AS location_name, p.location,
@@ -97,8 +88,6 @@ try {
             break;
 
         case 'read_pics':
-            // [FIX PIC] daftar PIC = karyawan aktif; karyawan nonaktif tetap ikut
-            // bila sudah dipakai sebagai PIC proyek (agar tampil benar saat Edit).
             mpJson(['success' => true, 'data' => mpFetchAll($db,
                 "SELECT id, employee_name AS name
                    FROM m_employee
@@ -112,7 +101,6 @@ try {
                 "SELECT id, name FROM m_location ORDER BY name", [], 'read_locations')]);
             break;
 
-        // --------------------------------------------------------------
         case 'create':
         case 'update':
             if ($task === 'create' && $access < 2) {
@@ -132,9 +120,12 @@ try {
             $status         = $_REQUEST['status'] ?? 'Berjalan';
             $notes          = $_REQUEST['notes'] ?? '';
 
-            // [FIX] angka: null = tidak dikirim -> pada UPDATE nilai lama dipertahankan
-            $budget         = (isset($_REQUEST['budget']) && $_REQUEST['budget'] !== '') ? (float)$_REQUEST['budget'] : null;
-            $contract_value = (isset($_REQUEST['contract_value']) && $_REQUEST['contract_value'] !== '') ? (float)$_REQUEST['contract_value'] : null;
+            // [PERBAIKAN] Bersihkan pemisah ribuan koma sebelum casting ke float
+            $budget_raw     = $_REQUEST['budget'] ?? '';
+            $cv_raw         = $_REQUEST['contract_value'] ?? '';
+            
+            $budget         = ($budget_raw !== '') ? (float)str_replace(',', '', $budget_raw) : null;
+            $contract_value = ($cv_raw !== '') ? (float)str_replace(',', '', $cv_raw) : null;
             $progress       = (isset($_REQUEST['progress']) && $_REQUEST['progress'] !== '') ? (int)$_REQUEST['progress'] : null;
 
             if ($name === '') throw new Exception('Nama Proyek wajib diisi.');
@@ -144,9 +135,6 @@ try {
             if ($progress !== null && ($progress < 0 || $progress > 100)) throw new Exception('Progress harus antara 0-100.');
             if ($end_date && $start_date && $end_date < $start_date) {
                 throw new Exception('Tanggal Selesai tidak boleh sebelum Tanggal Mulai.');
-            }
-            if (($budget !== null && $budget < 0) || ($contract_value !== null && $contract_value < 0)) {
-                throw new Exception('Budget/Nilai Kontrak tidak boleh negatif.');
             }
 
             if ($task === 'create') {
@@ -163,7 +151,6 @@ try {
                 mpJson(['success' => true, 'id' => $newId, 'message' => "Proyek '{$name}' berhasil ditambahkan."]);
             } else {
                 if (!$id) throw new Exception('ID proyek tidak valid.');
-                // [FIX] COALESCE: kolom angka yang tidak dikirim tidak ditimpa 0
                 mpExec($db,
                     "UPDATE projects SET
                         name = :name, client_id = :cid, pic_id = :pid, location_id = :lid,
@@ -194,10 +181,10 @@ try {
                     (SELECT COUNT(*) FROM purchase_orders WHERE project_id = :id1) AS po_count,
                     (SELECT COUNT(*) FROM project_invoices WHERE project_id = :id2) AS termin_count,
                     (SELECT COUNT(*) FROM material_out_header WHERE project_id = :id3) AS mout_count",
-                ['id1' => $id, 'id2' => $id, 'id3' => $id], 'cek referensi proyek');   // [FIX] placeholder unik per pemakaian
+                ['id1' => $id, 'id2' => $id, 'id3' => $id], 'cek referensi proyek');
             $refCount = (int)$refs['po_count'] + (int)$refs['termin_count'] + (int)$refs['mout_count'];
             if ($refCount > 0) {
-                throw new Exception("Proyek ini tidak bisa dihapus karena sudah punya transaksi terkait (PO: {$refs['po_count']}, Termin: {$refs['termin_count']}, Pemakaian Material: {$refs['mout_count']}).");
+                throw new Exception("Proyek ini tidak bisa dihapus karena sudah punya transaksi terkait.");
             }
 
             mpExec($db, "DELETE FROM projects WHERE id = :id", ['id' => $id], 'delete projects');

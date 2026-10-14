@@ -33,6 +33,35 @@ Ext.onReady(function () {
                        '.whDarkWin .x-btn-mc button{padding:7px 18px !important;height:auto !important;line-height:18px !important;font-size:13px !important;}';
         document.getElementsByTagName('head')[0].appendChild(st);
     })();
+
+    // CSS Tombol Ikon Aksi Satu Baris
+    (function () {
+        if (document.getElementById('pgActBtnCss')) { return; }
+        var st = document.createElement('style');
+        st.id = 'pgActBtnCss';
+        st.innerHTML = 
+            '.btn-act-icon {' +
+            '   display: inline-flex !important;' +
+            '   align-items: center !important;' +
+            '   justify-content: center !important;' +
+            '   width: 28px !important;' +
+            '   height: 28px !important;' +
+            '   padding: 0 !important;' +
+            '   border: none !important;' +
+            '   border-radius: 4px !important;' +
+            '   cursor: pointer !important;' +
+            '   transition: all 0.2s ease !important;' +
+            '}' +
+            '.btn-act-icon svg { display: block; }' +
+            '.btn-verify { background-color: #03615e !important; color: #ffffff !important; }' +
+            '.btn-verify:hover { background-color: #048a86 !important; transform: scale(1.08); }' +
+            '.btn-reject { background-color: #8e2b22 !important; color: #ffffff !important; }' +
+            '.btn-reject:hover { background-color: #b8382c !important; transform: scale(1.08); }' +
+            '.btn-cancel { background-color: #4a5568 !important; color: #ffffff !important; }' +
+            '.btn-cancel:hover { background-color: #718096 !important; transform: scale(1.08); }';
+        document.getElementsByTagName('head')[0].appendChild(st);
+    })();
+
     document.getElementById("mainHeaderText").innerHTML = "Progress <em>Proyek</em>";
 
     var CRD = '../php-crud/project.progressCRD.php';
@@ -47,7 +76,6 @@ Ext.onReady(function () {
         return (typeof formAccess !== 'undefined') ? formAccess : (window.formAccess || 0);
     }
     function enc(v) { return Ext.util.Format.htmlEncode(v == null ? '' : v); }
-    // [FIX-DATE] Date.format('Y-m-d') Ext menghasilkan 'Y-10-13' di browser ini -> susun YYYY-MM-DD manual
     function ymd(d) {
         var m = d.getMonth() + 1, dd = d.getDate();
         return d.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (dd < 10 ? '0' + dd : dd);
@@ -68,7 +96,6 @@ Ext.onReady(function () {
         });
     }
 
-    // [NEW] bukti = satu atau lebih baris: URL unggahan (jadi link Foto / PDF) atau teks (mis. no. BAP)
     function proofLinks(v) {
         if (!v) { return '-'; }
         var out = [], parts = String(v).split(/\r?\n/);
@@ -125,7 +152,7 @@ Ext.onReady(function () {
                 return;
             }
             currentUserId = res.user_id || 0;
-            allowSelfVerify = !!res.allow_self_verify;      // [NEW]
+            allowSelfVerify = !!res.allow_self_verify;
             renderDetail(res.data || []);
         }, function () {
             dtlDiv.innerHTML = '<div style="color:red; padding:10px;">Gagal terhubung ke server.</div>';
@@ -137,15 +164,15 @@ Ext.onReady(function () {
         var d = dataRecord;
         if (!d) { dtlDiv.style.display = 'none'; return; }
         var noBudget = !(d.budget_base > 0);
-        // [NEW] tombol Lapor Progress di panel detail (hanya bila akses cukup & proyek Berjalan / Tertunda)
         var canReport = getFormAccess() >= ACCESS_REPORT && (d.status === 'Berjalan' || d.status === 'Tertunda');
         var reportBar = '<div style="padding:2px 2px 8px 2px; text-align:right;">' +
             (canReport
                 ? '<button type="button" id="pgReportBtn" style="padding:6px 16px; background:#03615e; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold;">+ Lapor Progress</button>'
                 : '<span style="color:#668894; font-size:11px;">' + (getFormAccess() < ACCESS_REPORT ? 'Anda tidak memiliki akses melapor progress.' : 'Proyek berstatus ' + enc(d.status) + ': progress tidak dapat dilaporkan.') + '</span>') +
             '</div>';
+        
         var html = '<h3 class="detail-title">Progress: ' + enc(d.name) + ' <span style="color:' + cpiColor(d.cpi_status) + ';">(' + enc(d.cpi_status) + ')</span></h3>' +
-                   '<hr class="detail-hr" />' + reportBar +      // [NEW] tombol Lapor Progress
+                   '<hr class="detail-hr" />' + reportBar +
                    '<div style="padding:6px 10px; margin:0 2px 10px 2px; background:#1f2d3a; border-radius:4px; line-height:1.7;">' +
                    (noBudget
                        ? '<span style="color:#ff6b5e;">Budget proyek belum diisi di Master Proyek - indeks biaya tidak dapat dihitung.</span><br>'
@@ -159,42 +186,57 @@ Ext.onReady(function () {
                    '<table class="detail-table" width="100%" cellSpacing="0" cellPadding="0"><thead><tr class="header-row">' +
                    '<th align="left">Tanggal</th><th align="right">Klaim</th><th align="left">Pelapor</th><th align="left">Bukti</th>' +
                    '<th align="left">Catatan</th><th align="center">Status</th><th align="left">Verifikasi</th><th align="center">Aksi</th></tr></thead><tbody>';
+        
         if (!rows.length) {
-            html += '<tr><td colspan="8" style="padding:15px; text-align:center; color:#557982;">Belum ada klaim progress. Klik "+ Lapor Progress" untuk mengajukan; verifikasi dilakukan pengguna lain (akses level 3).</td></tr>';      // [CHANGED] petunjuk alur
+            html += '<tr><td colspan="8" style="padding:15px; text-align:center; color:#557982;">Belum ada klaim progress. Klik "+ Lapor Progress" untuk mengajukan; verifikasi dilakukan pengguna lain (akses level 3).</td></tr>';
         }
+
+        // SVG Icons untuk tombol aksi
+        var iconCheck = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+        var iconCross = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+        var iconBan   = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>';
+
         Ext.each(rows, function (r) {
             var acts = '';
             if (r.status === 'Diajukan') {
-                if (getFormAccess() >= ACCESS_VERIFY && (allowSelfVerify || r.reported_by !== currentUserId)) {      // [CHANGED] ikut flag server
-                    acts += '<button type="button" class="pgAct" data-act="verify" data-id="' + r.id + '" style="margin:0 3px; padding:4px 10px; background:#03615e; color:#fff; border:none; border-radius:3px; cursor:pointer;">Verifikasi</button>' +
-                            '<button type="button" class="pgAct" data-act="reject" data-id="' + r.id + '" style="margin:0 3px; padding:4px 10px; background:#8e2b22; color:#fff; border:none; border-radius:3px; cursor:pointer;">Tolak</button>';
-                } else if (r.reported_by === currentUserId) {      // [CHANGED] petunjuk untuk pelapor (berlaku untuk semua level akses)
-                    acts += '<span style="color:#e6a817; font-size:11px;">Anda pelapor: verifikasi oleh pengguna lain (akses 3)</span> ';
+                var btnList = [];
+                if (getFormAccess() >= ACCESS_VERIFY && (allowSelfVerify || r.reported_by !== currentUserId)) {
+                    btnList.push('<button type="button" class="pgAct btn-act-icon btn-verify" data-act="verify" data-id="' + r.id + '" title="Verifikasi Progress">' + iconCheck + '</button>');
+                    btnList.push('<button type="button" class="pgAct btn-act-icon btn-reject" data-act="reject" data-id="' + r.id + '" title="Tolak Klaim">' + iconCross + '</button>');
+                } else if (r.reported_by === currentUserId) {
+                    acts += '<span style="color:#e6a817; font-size:11px;">Anda pelapor: verifikasi oleh pengguna lain</span> ';
                 } else if (getFormAccess() < ACCESS_VERIFY) {
-                    acts += '<span style="color:#668894; font-size:11px;">menunggu verifikator (akses 3)</span> ';
+                    acts += '<span style="color:#668894; font-size:11px;">menunggu verifikator</span> ';
                 }
+                
                 if (getFormAccess() >= ACCESS_REPORT && (r.reported_by === currentUserId || getFormAccess() >= ACCESS_VERIFY)) {
-                    acts += '<button type="button" class="pgAct" data-act="cancel" data-id="' + r.id + '" style="margin:0 3px; padding:4px 10px; background:#555555; color:#fff; border:none; border-radius:3px; cursor:pointer;">Batalkan</button>';
+                    btnList.push('<button type="button" class="pgAct btn-act-icon btn-cancel" data-act="cancel" data-id="' + r.id + '" title="Batalkan Klaim">' + iconBan + '</button>');
+                }
+
+                if (btnList.length > 0) {
+                    acts = '<div style="display:inline-flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap;">' + btnList.join('') + '</div>';
                 }
             }
+
             var ver = r.verified_at ? enc(r.verifier_name || '-') + '<br><span style="color:#668894; font-size:11px;">' + enc(String(r.verified_at).substr(0, 16)) + '</span>' : '-';
             if (r.verify_note) ver += '<br><span style="font-size:11px;">' + enc(r.verify_note) + '</span>';
             if (r.snap_cpi !== null && r.snap_cpi !== undefined) ver += '<br><span style="color:#9fc3d1; font-size:11px;">indeks saat verifikasi ' + fmtCpi(r.snap_cpi) + '</span>';
+            
             html += '<tr class="data-row">' +
                     '<td align="left">' + enc(r.report_date) + '</td>' +
                     '<td align="right"><b>' + r.percent_claimed + '%</b> <span style="color:#668894;">(dari ' + r.prev_percent + '%)</span></td>' +
                     '<td align="left">' + enc(r.reporter_name || '-') + '</td>' +
-                    '<td align="left">' + proofLinks(r.evidence_ref) + '</td>' +      // [CHANGED] link bukti
+                    '<td align="left">' + proofLinks(r.evidence_ref) + '</td>' +
                     '<td align="left">' + enc(r.note || '') + '</td>' +
                     '<td align="center" style="color:' + claimColor(r.status) + ';font-weight:bold;">' + enc(r.status) + '</td>' +
                     '<td align="left">' + ver + '</td>' +
-                    '<td align="center">' + acts + '</td></tr>';
+                    '<td align="center" style="white-space:nowrap;">' + acts + '</td></tr>';
         });
         html += '</tbody></table>';
         dtlDiv.innerHTML = html;
         dtlDiv.style.display = 'block';
 
-        var rb = document.getElementById('pgReportBtn');      // [NEW]
+        var rb = document.getElementById('pgReportBtn');
         if (rb) { rb.onclick = function () { openClaimWindow(dataRecord); }; }
 
         var btns = dtlDiv.querySelectorAll('.pgAct');
@@ -219,7 +261,6 @@ Ext.onReady(function () {
         { name: 'cpi_status' }, { name: 'pending_count', type: 'int' }
     ];
 
-    // PENTING: assignment polos (bukan var/let) -- konvensi search box global.
     mainDs = new Ext.data.Store({
         url: CRD,
         idProperty: 'id',
@@ -230,7 +271,7 @@ Ext.onReady(function () {
                 var t = (store.reader.jsonData || {}).thresholds;
                 if (t) { thresholds = t; }
             },
-            exception: function (proxy, type, action, options, response) {      // wajib: pesan error eksplisit
+            exception: function (proxy, type, action, options, response) {
                 var msg = 'Gagal memuat data dari server.';
                 try { var r = Ext.util.JSON.decode(response.responseText); if (r && r.message) msg = r.message; }
                 catch (e) { msg += ' (respons bukan JSON, cek error_log PHP)'; }
@@ -274,12 +315,11 @@ Ext.onReady(function () {
         }
     });
 
-    editDataDisable();                      // tidak ada edit / hapus: progress hanya lewat klaim & verifikasi
+    editDataDisable();
     mainBtnDisable('#deleteData');
-    mainBtnEnable('#addData');              // Add = Lapor Progress
-    document.getElementById('addData').title = 'Lapor Progress (pilih proyek dulu)';      // [NEW] petunjuk ikon Add
+    mainBtnEnable('#addData');
+    document.getElementById('addData').title = 'Lapor Progress (pilih proyek dulu)';
 
-    // muat ulang grid + panel detail proyek yang sedang dipilih
     function refreshAll(projectId) {
         mainDs.load({
             callback: function () {
@@ -321,7 +361,6 @@ Ext.onReady(function () {
         var fEvid = new Ext.form.TextField({ fieldLabel: 'No. BAP / keterangan bukti', anchor: '95%' });
         var fNote = new Ext.form.TextArea({ fieldLabel: 'Catatan', anchor: '95%', height: 55 });
 
-        // [NEW] bukti foto / PDF: maks 5 file x 5 MB, diunggah satu per satu ke server (task upload_evidence)
         var proofs = [], uploading = 0;
         var fProofList = new Ext.form.DisplayField({ fieldLabel: 'Bukti foto / PDF', anchor: '95%', value: '' });
         function renderProofs() {
@@ -377,8 +416,8 @@ Ext.onReady(function () {
                     var lines = proofs.slice(0);
                     if (Ext.util.Format.trim(fEvid.getValue() || '') !== '') { lines.push(Ext.util.Format.trim(fEvid.getValue())); }
                     if (!lines.length) { Ext.Msg.alert('Peringatan', 'Bukti wajib: unggah foto / PDF atau isi no. BAP.'); return; }
-                    var params = {      // ambil nilai sebelum window ditutup
-                        task: 'submit_claim', project_id: proj.id, report_date: ymd(fDate.getValue()),      // [FIX-DATE]
+                    var params = {
+                        task: 'submit_claim', project_id: proj.id, report_date: ymd(fDate.getValue()),
                         percent_claimed: fPct.getValue(), evidence_ref: lines.join('\n'), note: fNote.getValue()
                     };
                     ajax(params, function (res) {
@@ -388,7 +427,7 @@ Ext.onReady(function () {
                 } },
                 { text: 'Batal', handler: function () { win.close(); } }
             ],
-            listeners: { close: function () {      // bersihkan input file & handler hapus
+            listeners: { close: function () {
                 if (fileInput.parentNode) { fileInput.parentNode.removeChild(fileInput); }
                 window.pgProofRemove = null;
             } }
@@ -415,7 +454,6 @@ Ext.onReady(function () {
         var approve = (act === 'verify');
         var msg;
         if (approve) {
-            // pratinjau indeks biaya pada progress yang diklaim (server menghitung ulang saat menyimpan)
             var ev = dataRecord.budget_base * claim.percent_claimed / 100;
             var cpi = dataRecord.cost_actual > 0 ? ev / dataRecord.cost_actual : null;
             msg = 'Setujui progress <b>' + claim.percent_claimed + '%</b> (bukti: ' + proofLinks(claim.evidence_ref) + ')?<br>' +

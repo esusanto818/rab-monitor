@@ -12,3 +12,4 @@ EOF
 - [ ] pembayaran termin | Target: 2026-10-13
 - [ ] tambah di rab modul, plafon budget proyek, dan kalkulasi waktu pembuatan rab(beri info(kurang/lebih/sudah pas) antara nilai plafon dengan rab | Target: 2026-10-15
 - [ ] add modul project progress | Target: 2026-10-15
+- [ ] tambah modul project progress mobile untuk update progress di lapangan | Target: 2026-10-25

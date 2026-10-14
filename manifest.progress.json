@@ -1,0 +1,14 @@
+{
+  "name": "Progress Proyek",
+  "short_name": "Progress",
+  "start_url": "/proyek/views/project.progress.m.php",
+  "scope": "/proyek/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#10202a",
+  "theme_color": "#03615e",
+  "icons": [
+    { "src": "/proyek/assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/proyek/assets/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
