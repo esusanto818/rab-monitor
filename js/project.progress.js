@@ -467,7 +467,7 @@ Ext.onReady(function () {
         //           Warna kolom catatan diatur di css/frm.css (.ext-mb-textarea).
         Ext.Msg.show({
             title: approve ? 'Verifikasi Progress' : 'Tolak Klaim', msg: msg,
-            width: 460, minWidth: 460,                 // [CHANGED] sebelumnya otomatis (terlalu kecil)
+            width: 520, minWidth: 520,                 // [CHANGED] 460 -> 520: box catatan tidak terpotong
             prompt: true, multiline: 90,               // [CHANGED] textarea 90px (bawaan 75px)
             buttons: Ext.Msg.OKCANCEL, scope: this,
             fn: function (btn, text) {
@@ -480,6 +480,9 @@ Ext.onReady(function () {
             });
             }
         });
+        // [NEW] jaga-jaga: bila ExtJS tidak memakai lebar yang diminta, paksa lebar dialog minimal 520px lalu tengahkan
+        var msgDlg = Ext.Msg.getDialog();
+        if (msgDlg && msgDlg.getWidth() < 520) { msgDlg.setWidth(520); msgDlg.doLayout(); msgDlg.center(); }
     }
 
     document.getElementById('popOK').onclick = function () {

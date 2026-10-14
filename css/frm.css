@@ -304,6 +304,8 @@ body .x-combo-list .x-combo-list-item:hover {
     font-size: 13px !important;
     line-height: 1.45 !important;
     box-sizing: border-box !important;
+    width: 100% !important;          /* [NEW] ikuti lebar isi dialog, tidak lagi melewati tepi kanan */
+    max-width: 100% !important;      /* [NEW] */
     box-shadow: none !important;
     outline: none !important;
 }
