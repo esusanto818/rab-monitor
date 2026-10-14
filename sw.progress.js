@@ -5,7 +5,7 @@
                 - php-crud/* TIDAK pernah di-cache (data selalu dari server; antrean offline ditangani IndexedDB di halaman)
                 Naikkan VERSION setiap kali project.progress.m.js / halaman diubah.
 */
-var VERSION = 'prg-v1';
+var VERSION = 'prg-v2';      // [DIUBAH] v1 -> v2: halaman mobile kini memakai alur klaim modul desktop
 var SHELL = [
     '/proyek/views/project.progress.m.php',
     '/proyek/js/project.progress.m.js',

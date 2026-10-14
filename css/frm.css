@@ -287,7 +287,45 @@ body .x-combo-list .x-combo-list-item:hover {
     border-radius: 4px !important;
     font-size: 13px !important;
     padding: 6px !important;
-}/* ====================================================================
+}
+
+/* [BARU] 7b. Ext.Msg.prompt : kolom input / textarea memakai class bawaan ExtJS (ext-mb-input / ext-mb-textarea),
+          sebelumnya tidak tertangani sehingga tampil putih. */
+.ext-mb-input,
+.ext-mb-textarea,
+.x-window-dlg .ext-mb-input,
+.x-window-dlg .ext-mb-textarea {
+    background-color: #04101c !important;
+    background-image: none !important;
+    color: #ffffff !important;
+    border: 1px solid #1d4c6d !important;
+    border-radius: 4px !important;
+    padding: 6px 8px !important;
+    font-size: 13px !important;
+    line-height: 1.45 !important;
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+.ext-mb-input:focus,
+.ext-mb-textarea:focus {
+    border-color: #38bdf8 !important;
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35) !important;
+}
+
+/* [BARU] 7c. Seragamkan semua lapisan bingkai dialog (sebelumnya bingkai #091a29 vs isi #071522 -> terlihat belang) */
+.x-window-dlg .x-window-tl, .x-window-dlg .x-window-tc, .x-window-dlg .x-window-tr,
+.x-window-dlg .x-window-ml, .x-window-dlg .x-window-mc, .x-window-dlg .x-window-mr,
+.x-window-dlg .x-window-bl, .x-window-dlg .x-window-bc, .x-window-dlg .x-window-br,
+.x-window-dlg .ext-mb-content, .x-window-dlg .ext-mb-fix-cursor,
+.x-window-dlg .x-window-body, .x-window-dlg .x-window-footer {
+    background-color: #071522 !important;
+    background-image: none !important;
+    border-color: #1a3a54 !important;
+}
+.x-window-dlg .x-window-header .x-tool { background-color: transparent !important; }
+
+/* ====================================================================
    8. DATE PICKER / POPUP KALENDER (DARK HEADER & CENTERED TODAY BUTTON)
    ==================================================================== */
 .x-date-picker {

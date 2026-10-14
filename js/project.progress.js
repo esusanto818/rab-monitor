@@ -463,7 +463,14 @@ Ext.onReady(function () {
         } else {
             msg = 'Tolak klaim progress <b>' + claim.percent_claimed + '%</b>?<br>Alasan penolakan (wajib):';
         }
-        Ext.Msg.prompt(approve ? 'Verifikasi Progress' : 'Tolak Klaim', msg, function (btn, text) {
+        // [CHANGED] Ext.Msg.prompt -> Ext.Msg.show agar ukuran dialog bisa diatur: lebar 460px, kolom catatan tinggi 90px.
+        //           Warna kolom catatan diatur di css/frm.css (.ext-mb-textarea).
+        Ext.Msg.show({
+            title: approve ? 'Verifikasi Progress' : 'Tolak Klaim', msg: msg,
+            width: 460, minWidth: 460,                 // [CHANGED] sebelumnya otomatis (terlalu kecil)
+            prompt: true, multiline: 90,               // [CHANGED] textarea 90px (bawaan 75px)
+            buttons: Ext.Msg.OKCANCEL, scope: this,
+            fn: function (btn, text) {
             if (btn !== 'ok') return;
             text = Ext.util.Format.trim(text || '');
             if (!approve && text === '') { Ext.Msg.alert('Peringatan', 'Alasan penolakan wajib diisi.'); return; }
@@ -471,7 +478,8 @@ Ext.onReady(function () {
                 Ext.Msg.alert(res.success ? 'Sukses' : 'Gagal', res.message || '');
                 if (res.success) refreshAll(pid);
             });
-        }, this, true);
+            }
+        });
     }
 
     document.getElementById('popOK').onclick = function () {
