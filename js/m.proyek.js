@@ -243,6 +243,7 @@ Ext.onReady(function () {
                 document.getElementById('popWdwTxt').innerHTML = res.message;
                 document.getElementById('popWdw').style.display = 'block';
                 mainDs.load({ params: { task: 'read' } });
+                document.getElementById('popCancel').innerHTML = 'Close';
                 document.getElementById('editorWdw').style.display = 'none';
             },
             failure: function (form, action) {

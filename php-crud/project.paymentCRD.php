@@ -14,7 +14,8 @@
  *   projects, clients, chart_of_accounts (akun kas/bank)
  *
  * Aturan:
- *  1. Satu pembayaran = satu proyek (client otomatis dari projects.client_id).
+ *  1. [MULTI-PROYEK] Satu pembayaran = satu CLIENT; alokasi boleh ke termin beberapa proyek milik client yang sama
+ *     (validasi: projects.client_id dari setiap termin harus sama dengan client pembayaran).
  *  2. Alokasi per termin tidak boleh melebihi sisa tagihan (amount - paid_amount).
  *  3. total_amount >= allocated_amount; selisihnya disimpan di excess_amount (lebih bayar).
  *  4. Simpan / hapus pembayaran memperbarui project_invoices.paid_amount dalam satu transaksi.
@@ -91,6 +92,19 @@ try {
             break;
 
         /* ------------------------------------------------------------------
+         * [MULTI-PROYEK] Combo client (hanya client yang punya proyek)
+         * ------------------------------------------------------------------ */
+        case 'list_client_options':
+            $rows = $db->query("
+                SELECT c.id, c.name
+                  FROM public.clients c
+                 WHERE EXISTS (SELECT 1 FROM public.projects p WHERE p.client_id = c.id)
+                 ORDER BY c.name ASC")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($rows as &$r) $r['id'] = (int)$r['id'];
+            sendJsonResponse(true, $rows);
+            break;
+
+        /* ------------------------------------------------------------------
          * Combo akun kas / bank (chart_of_accounts aktif)
          * ------------------------------------------------------------------ */
         case 'list_account_options':
@@ -110,38 +124,51 @@ try {
          * Termin proyek yang masih punya sisa tagihan + ringkasan kontrak
          * ------------------------------------------------------------------ */
         case 'list_outstanding':
-            $prj = (int)($_REQUEST['project_id'] ?? 0);
-            if ($prj <= 0) sendJsonResponse(true, ['data' => [], 'totalCount' => 0]);
+            // [MULTI-PROYEK] parameter = client_id; termin dari SEMUA proyek milik client
+            $cli = (int)($_REQUEST['client_id'] ?? 0);
+            if ($cli <= 0) sendJsonResponse(true, ['data' => [], 'totalCount' => 0], '', ['summary' => ['projects' => []]]);
 
             $st = $db->prepare("
-                SELECT id AS invoice_id, inv_no, termin_name, invoice_date, percentage,
-                       amount, paid_amount, (amount - paid_amount) AS remaining
-                  FROM public.project_invoices
-                 WHERE project_id = :p AND (amount - paid_amount) > 0
-                 ORDER BY invoice_date ASC, id ASC");
-            $st->execute([':p' => $prj]);
+                SELECT v.id AS invoice_id, v.project_id, p.name AS project_name,
+                       v.inv_no, v.termin_name, v.invoice_date, v.percentage,
+                       v.amount, v.paid_amount, (v.amount - v.paid_amount) AS remaining
+                  FROM public.project_invoices v
+                  JOIN public.projects p ON p.id = v.project_id
+                 WHERE p.client_id = :c AND (v.amount - v.paid_amount) > 0
+                 ORDER BY v.invoice_date ASC, v.id ASC");
+            $st->execute([':c' => $cli]);
             $rows = $st->fetchAll(PDO::FETCH_ASSOC);
             foreach ($rows as &$r) {
                 $r['invoice_id']  = (int)$r['invoice_id'];
+                $r['project_id']  = (int)$r['project_id'];
                 $r['percentage']  = $r['percentage'] !== null ? (float)$r['percentage'] : null;
                 $r['amount']      = (float)$r['amount'];
                 $r['paid_amount'] = (float)$r['paid_amount'];
                 $r['remaining']   = (float)$r['remaining'];
             }
+            unset($r);
 
+            // Ringkasan kontrak per proyek milik client (termasuk proyek yang belum punya termin)
             $st = $db->prepare("
-                SELECT COALESCE((SELECT contract_value FROM public.projects WHERE id = :p1), 0) AS contract_value,
-                       COALESCE(SUM(amount), 0)      AS total_termin,
-                       COALESCE(SUM(paid_amount), 0) AS total_paid
-                  FROM public.project_invoices WHERE project_id = :p2");
-            $st->execute([':p1' => $prj, ':p2' => $prj]);
-            $sm = $st->fetch(PDO::FETCH_ASSOC);
-            $summary = [
-                'contract_value' => (float)$sm['contract_value'],
-                'total_termin'   => (float)$sm['total_termin'],
-                'total_paid'     => (float)$sm['total_paid'],
-            ];
-            sendJsonResponse(true, ['data' => $rows, 'totalCount' => count($rows)], '', ['summary' => $summary]);
+                SELECT p.id AS project_id, p.name AS project_name,
+                       COALESCE(p.contract_value, 0)  AS contract_value,
+                       COALESCE(SUM(v.amount), 0)      AS total_termin,
+                       COALESCE(SUM(v.paid_amount), 0) AS total_paid
+                  FROM public.projects p
+                  LEFT JOIN public.project_invoices v ON v.project_id = p.id
+                 WHERE p.client_id = :c
+                 GROUP BY p.id, p.name, p.contract_value
+                 ORDER BY p.name ASC");
+            $st->execute([':c' => $cli]);
+            $projects = $st->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($projects as &$pr) {
+                $pr['project_id']     = (int)$pr['project_id'];
+                $pr['contract_value'] = (float)$pr['contract_value'];
+                $pr['total_termin']   = (float)$pr['total_termin'];
+                $pr['total_paid']     = (float)$pr['total_paid'];
+            }
+            unset($pr);
+            sendJsonResponse(true, ['data' => $rows, 'totalCount' => count($rows)], '', ['summary' => ['projects' => $projects]]);
             break;
 
         /* ------------------------------------------------------------------
@@ -149,6 +176,7 @@ try {
          * ------------------------------------------------------------------ */
         case 'save_termin':
             $prj  = (int)($_POST['project_id'] ?? 0);
+            $cliChk = (int)($_POST['client_id'] ?? 0);              // [MULTI-PROYEK] bila dikirim, proyek harus milik client ini
             $name = trim((string)($_POST['termin_name'] ?? ''));
             $date = (string)($_POST['invoice_date'] ?? '');
             $pct  = ($_POST['percentage'] ?? '') !== '' ? round((float)$_POST['percentage'], 2) : null;
@@ -162,11 +190,12 @@ try {
 
                 $db->beginTransaction();
                 try {
-                    $st = $db->prepare("SELECT COALESCE(contract_value, 0) FROM public.projects WHERE id = :id FOR UPDATE");
+                    $st = $db->prepare("SELECT COALESCE(contract_value, 0) AS cv, client_id FROM public.projects WHERE id = :id FOR UPDATE");
                     $st->execute([':id' => $prj]);
-                    $contract = $st->fetchColumn();
-                    if ($contract === false) throw new PpBusinessError('Proyek tidak ditemukan.');
-                    $contract = (float)$contract;
+                    $prjRow = $st->fetch(PDO::FETCH_ASSOC);
+                    if (!$prjRow) throw new PpBusinessError('Proyek tidak ditemukan.');
+                    if ($cliChk > 0 && (int)$prjRow['client_id'] !== $cliChk) throw new PpBusinessError('Proyek tidak termasuk client yang dipilih.');   // [MULTI-PROYEK]
+                    $contract = (float)$prjRow['cv'];
 
                     if ($amt <= 0 && $pct !== null && $contract > 0) $amt = round($contract * $pct / 100, 2);   // nilai dari persentase
                     if ($amt <= 0) throw new PpBusinessError('Nilai termin harus lebih dari 0.');
@@ -310,7 +339,7 @@ try {
          * Simpan pembayaran baru (header + alokasi termin) dalam satu transaksi
          * ------------------------------------------------------------------ */
         case 'save_payment':
-            $prj    = (int)($_POST['project_id'] ?? 0);
+            $cli    = (int)($_POST['client_id'] ?? 0);              // [MULTI-PROYEK] ganti project_id
             $date   = (string)($_POST['payment_date'] ?? '');
             $acc    = (int)($_POST['account_id'] ?? 0) ?: null;
             $method = strtoupper(trim((string)($_POST['payment_method'] ?? 'BANK_TRANSFER')));
@@ -321,18 +350,16 @@ try {
 
             try {
                 if (!pp_valid_date($date)) throw new PpBusinessError('Tanggal pembayaran tidak valid.');
-                if ($prj <= 0) throw new PpBusinessError('Proyek wajib dipilih.');
+                if ($cli <= 0) throw new PpBusinessError('Client wajib dipilih.');
                 if (!in_array($method, PP_METHODS, true)) throw new PpBusinessError('Metode pembayaran tidak valid.');
                 if (!is_array($items) || !count($items)) throw new PpBusinessError('Alokasikan pembayaran ke minimal satu termin.');
 
                 $db->beginTransaction();
                 try {
-                    $st = $db->prepare("SELECT client_id FROM public.projects WHERE id = :id");
-                    $st->execute([':id' => $prj]);
-                    $prjRow = $st->fetch(PDO::FETCH_ASSOC);
-                    if (!$prjRow) throw new PpBusinessError('Proyek tidak ditemukan.');
-                    if (!$prjRow['client_id']) throw new PpBusinessError('Proyek ini belum memiliki client. Lengkapi data proyek terlebih dahulu.');
-                    $clientId = (int)$prjRow['client_id'];
+                    $st = $db->prepare("SELECT 1 FROM public.clients WHERE id = :id");
+                    $st->execute([':id' => $cli]);
+                    if (!$st->fetchColumn()) throw new PpBusinessError('Client tidak ditemukan.');
+                    $clientId = $cli;
 
                     if ($acc) {
                         $st = $db->prepare("SELECT 1 FROM public.chart_of_accounts WHERE id = :id");
@@ -340,10 +367,14 @@ try {
                         if (!$st->fetchColumn()) throw new PpBusinessError('Akun kas/bank tidak ditemukan.');
                     }
 
-                    // Kunci & validasi setiap termin
+                    // Kunci & validasi setiap termin. [MULTI-PROYEK] termin boleh beda proyek, tapi client proyeknya harus sama.
+                    // FOR UPDATE OF v = hanya kunci baris invoice (bukan baris projects).
                     $stInv = $db->prepare("
-                        SELECT id, inv_no, project_id, amount, paid_amount
-                          FROM public.project_invoices WHERE id = :id FOR UPDATE");
+                        SELECT v.id, v.inv_no, v.project_id, v.amount, v.paid_amount,
+                               p.client_id, p.name AS project_name
+                          FROM public.project_invoices v
+                          JOIN public.projects p ON p.id = v.project_id
+                         WHERE v.id = :id FOR UPDATE OF v");
                     $clean = []; $seen = []; $allocated = 0.0;
                     foreach ($items as $n => $it) {
                         $invId = (int)($it['invoice_id'] ?? 0);
@@ -356,10 +387,10 @@ try {
                         $stInv->execute([':id' => $invId]);
                         $inv = $stInv->fetch(PDO::FETCH_ASSOC);
                         if (!$inv) throw new PpBusinessError("{$no}: termin tidak ditemukan.");
-                        if ((int)$inv['project_id'] !== $prj) throw new PpBusinessError("{$no}: termin {$inv['inv_no']} bukan milik proyek ini.");
+                        if ((int)$inv['client_id'] !== $clientId) throw new PpBusinessError("{$no}: termin {$inv['inv_no']} ({$inv['project_name']}) bukan milik client ini.");
                         $sisa = round((float)$inv['amount'] - (float)$inv['paid_amount'], 2);
                         if ($pay > $sisa + PP_EPS) {
-                            throw new PpBusinessError("Termin {$inv['inv_no']}: nilai bayar " . number_format($pay, 2) . " melebihi sisa tagihan (" . number_format($sisa, 2) . ").");
+                            throw new PpBusinessError("Termin {$inv['inv_no']} ({$inv['project_name']}): nilai bayar " . number_format($pay, 2) . " melebihi sisa tagihan (" . number_format($sisa, 2) . ").");
                         }
                         $allocated += $pay;
                         $clean[] = ['inv' => $invId, 'pay' => $pay];

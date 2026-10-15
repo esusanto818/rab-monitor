@@ -328,6 +328,68 @@ body .x-combo-list .x-combo-list-item:hover {
 .x-window-dlg .x-window-header .x-tool { background-color: transparent !important; }
 
 /* ====================================================================
+   [BARU] 7d. WINDOW NOTIFIKASI TEMPLATE (#popWdw, markup: div-popUp.php)
+   Struktur: #popWdw > #popWdwOverlay + #popWdwMain.popColor > #popWdwTxt.popFontColor + #popMenuForm.popBorderColor
+             > a#popOK.pop-form-button.white-form-button + a#popCancel.pop-form-button.red-form-button
+   Warna terang berasal dari class .popColor / .popFontColor / .popBorderColor (popUp.css) dan
+   .white-form-button (mainCSS.css: #cbcbcb + color #000 !important). Di sini ditimpa dengan
+   selector berawalan #popWdw (specificity ID) + !important.
+   ==================================================================== */
+#popWdw #popWdwMain,
+#popWdw #popWdwMain.popColor {
+    background-color: #071522 !important;      /* [NEW] kotak dialog gelap, seragam dg Ext.Msg (section 7) */
+    background-image: none !important;
+    border: 1px solid #1d4c6d !important;      /* [NEW] */
+    border-radius: 6px !important;             /* [NEW] */
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.9) !important;   /* [NEW] */
+    color: #f8fafc !important;
+}
+
+#popWdw #popWdwTxt,
+#popWdw #popWdwTxt.popFontColor {
+    background: transparent !important;        /* [NEW] */
+    color: #f8fafc !important;                 /* [NEW] teks terang */
+    font-size: 16px !important;
+    line-height: 1.6 !important;
+}
+
+/* garis pemisah di atas tombol (border #popMenuForm) */
+#popWdw #popMenuForm,
+#popWdw #popMenuForm.popBorderColor {
+    background: transparent !important;        /* [NEW] */
+    border-color: #1d4c6d !important;          /* [NEW] */
+}
+
+/* tombol OK : pill outline biru (serasi dengan Cancel hijau & Save merah di section 3) */
+#popWdw #popOK {
+    background: transparent !important;        /* [NEW] sebelumnya #cbcbcb dari .white-form-button */
+    background-image: none !important;
+    border: 1px solid #38bdf8 !important;      /* [NEW] */
+    color: #38bdf8 !important;                 /* [NEW] menimpa color:#000 !important */
+    font-size: 11px !important;
+    font-weight: 400 !important;
+    border-radius: 18px !important;
+    padding: 9px 24px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    line-height: 1.2 !important;
+    text-transform: uppercase !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+    display: inline-block !important;
+}
+#popWdw #popOK:hover {
+    background: rgba(56, 189, 248, 0.30) !important;   /* [NEW] */
+    color: #e0f2fe !important;
+}
+
+/* [REVISI] Rule penyembunyi #popCancel dihapus: tombol Cancel/Close di notifikasi kembali tampil
+   (section 3 memberi display:inline-block !important). Style-nya ikut tema: pill outline hijau. */
+#popWdw #popCancel {
+    margin-right: 10px !important;             /* [NEW] jarak ke tombol OK */
+}
+
+/* ====================================================================
    8. DATE PICKER / POPUP KALENDER (DARK HEADER & CENTERED TODAY BUTTON)
    ==================================================================== */
 .x-date-picker {
