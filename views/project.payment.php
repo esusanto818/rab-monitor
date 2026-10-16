@@ -18,8 +18,8 @@
         <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
         <link rel="stylesheet" type="text/css" href="/proyek/css/frm.css" />
         <style>
-            #editorForm { top: 50%; width: 90%; height: 85%; }
-            #addForm { top: 50%; width: 85%; height: 70%; }
+            #editorForm { top: 50%; width: 90%; height: 95%; }
+            #addForm { top: 50%; width: 85%; height: 80%; }
         </style>
     </head>
     <body>

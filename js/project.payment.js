@@ -11,6 +11,7 @@
                    [MULTI-CURRENCY] pembayaran punya mata uang + kurs (default IDR, kurs KMK pada tanggal bayar). Jumlah Diterima & Bayar Sekarang
                    diisi dalam mata uang pembayaran; tagihan termin tetap IDR, nilai setara IDR = nilai x kurs (dibatasi sisa tagihan).
                    Butuh migrasi: sql/2026-10-15.project_payment_currency.sql
+                   [JURNAL] simpan pembayaran memposting jurnal otomatis (Kas/Bank wajib dipilih); hapus pembayaran menghapus jurnalnya.
   Backend       : /proyek/php-crud/project.paymentCRD.php
   Cetak         : /proyek/views/project.payment.print.php?id=<id>  (project.payment.print.js)
 */
@@ -24,6 +25,10 @@ Ext.onReady(function () {
     var ACCESS_ADD = 2;      // level akses minimal: input pembayaran / termin
     var ACCESS_EDIT = 3;     // level akses minimal: hapus pembayaran
     var VEPS = 0.01;         // toleransi nilai
+    // [RULE-TERMIN] aturan minimal pembayaran per urutan termin (persen dari NILAI KONTRAK proyek)
+    var TERMIN_RULE_PCT = { 1: 30, 2: 20 };   // termin ke-1 = 30%, termin ke-2 = 20%; termin ke-3 dst belum ada aturan -> hanya porsi proporsional
+    var DP_PCT = 30;                          // proyek belum pernah dibayar -> alokasikan sebagai DP 30% dari kontrak
+    var allocNote = '';                       // [RULE-TERMIN] keterangan hasil alokasi otomatis (ditampilkan di bawah total)
 
     var dataRecord = null;         // baris pembayaran terpilih di grid utama
     var hdrForm = null;
@@ -32,6 +37,7 @@ Ext.onReady(function () {
     var rateManual = false;                // [MULTI-CURRENCY] kurs diubah manual -> jangan ditimpa kurs otomatis
     var rateReq = 0;                       // [MULTI-CURRENCY] penanda request kurs terbaru (abaikan respons usang)
     var totalManual = false;       // jumlah diterima diisi manual -> jangan ditimpa total alokasi otomatis
+    var autoMode = true;           // [AUTO-ALLOC] default TRUE: Jumlah Diterima diisi -> alokasi dibagi otomatis ke proyek (porsi = nilai kontrak). Edit manual 'Bayar Sekarang' / Lunasi Semua Sisa mematikannya
     var projSummary = [];          // [MULTI-PROYEK] ringkasan kontrak per proyek milik client terpilih
 
     function getFormAccess() {
@@ -67,6 +73,14 @@ Ext.onReady(function () {
         Ext.Msg.alert('Gagal', 'Gagal memuat data dari server. Coba muat ulang halaman atau hubungi admin.');
     }
 
+    // [FIX] baca nilai field angka; fallback ke raw value (buang pemisah ribuan) bila getValue() tidak numerik
+    function numVal(f) {
+        if (!f) return 0;
+        var v = parseFloat(f.getValue());
+        if (isNaN(v)) v = parseFloat(String(f.getRawValue() || '').replace(/,/g, ''));
+        return isNaN(v) ? 0 : v;
+    }
+
     // ---- [MULTI-CURRENCY] helper mata uang & kurs -------------------------
     function fmtRate(v) { return Ext.util.Format.number(v || 0, '0,000.0000'); }
     function currencyCode(id) { var r = id ? currencyDs.getById(id) : null; return r ? r.get('init') : 'IDR'; }
@@ -96,11 +110,26 @@ Ext.onReady(function () {
     var GridMainHeight = maxGridHeight(document.getElementById('divMainGrid'));
     var DtlHeight = Math.round(GridMainHeight - (GridMainHeight * 0.6) - 30);
 
+    // [FIX] header kolom grid boleh multi-baris (sebelumnya terpotong '...'): grid utama & grid termin di editor
+    (function injectHeaderCss() {
+        var st = document.createElement('style');
+        st.type = 'text/css';
+        st.appendChild(document.createTextNode(
+            // [FIX] tinggi semua sel header SAMA (muat 2 baris) & teks di tengah vertikal -> garis header rata walau ada header 1 / 2 baris.
+            //       flex column: rata vertikal tengah, text-align bawaan Ext (kiri/kanan/tengah) tetap berlaku.
+            '.ppMainGrid .x-grid3-hd-inner, #editorFormGrid .x-grid3-hd-inner {' +
+            ' white-space:normal !important; overflow:hidden !important; text-overflow:clip !important;' +
+            ' line-height:14px !important; height:36px !important; padding:0 6px !important; box-sizing:border-box;' +
+            ' display:flex !important; flex-direction:column; justify-content:center; }' +
+            '.ppMainGrid .x-grid3-hd, #editorFormGrid .x-grid3-hd { padding:0 !important; vertical-align:top; }'));
+        document.getElementsByTagName('head')[0].appendChild(st);
+    })();
+
     var dtlDiv = document.createElement('div');
     dtlDiv.id = 'ppDtlContainer';
     dtlDiv.className = 'detail-panel-container';
     dtlDiv.style.display = 'none';
-    dtlDiv.style.maxHeight = DtlHeight;
+    dtlDiv.style.maxHeight = DtlHeight + 'px';       // [FIX] sebelumnya angka tanpa 'px' -> diabaikan browser, panel detail tidak bisa di-scroll
     dtlDiv.style.overflowY = 'auto';
     if (gridContainer && gridContainer.parentNode) {
         gridContainer.parentNode.insertBefore(dtlDiv, gridContainer.nextSibling);
@@ -225,6 +254,7 @@ Ext.onReady(function () {
     var outField = [
         { name: 'invoice_id' }, { name: 'project_id' }, { name: 'project_name' },     // [MULTI-PROYEK] proyek asal termin
         { name: 'inv_no' }, { name: 'termin_name' }, { name: 'invoice_date' },
+        { name: 'termin_no', type: 'int' },                                           // [RULE-TERMIN] urutan termin dalam proyek (dari backend)
         { name: 'percentage', type: 'float' }, { name: 'amount', type: 'float' },
         { name: 'paid_amount', type: 'float' }, { name: 'remaining', type: 'float' },
         { name: 'pay', type: 'float', defaultValue: 0 },            // nilai bayar dalam MATA UANG PEMBAYARAN
@@ -253,6 +283,7 @@ Ext.onReady(function () {
     var gridMain = new Ext.grid.GridPanel({
         store: mainDs,
         renderTo: 'divMainGrid',
+        cls: 'ppMainGrid',                      // [FIX] target CSS header multi-baris
         height: mainHeight,
         columns: [
             { header: 'No. Pembayaran', dataIndex: 'payment_no', width: 130 },
@@ -283,6 +314,8 @@ Ext.onReady(function () {
             }
         }
     });
+
+    setTimeout(function () { try { gridMain.getView().layout(); } catch (e) {} }, 100);     // [FIX] hitung ulang area scroll setelah header multi-baris
 
     function updateMainButtons() {
         mainBtnEnable('#addData');
@@ -320,17 +353,35 @@ Ext.onReady(function () {
             {   // [MULTI-CURRENCY] setara IDR dari Bayar Sekarang x kurs
                 header: 'Setara IDR', dataIndex: 'pay_idr', width: 110, align: 'right',
                 renderer: function (v) { return '<span style="color:#9fc3d1;">' + fmtAmt(v) + '</span>'; }
+            },
+            {   // [NEW] tombol hapus termin (salah entry)
+                id: 'ppDeleteCol', dataIndex: 'invoice_id', width: 32, align: 'center', fixed: true,
+                // [NEW] ikon tempat sampah di header kolom hapus termin
+                header: '<span title="Hapus termin" style="display:inline-block;line-height:0;">' +
+                        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e05353" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                        '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>' +
+                        '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></span>',
+                renderer: function () {
+                    return '<span style="color:#e05353;cursor:pointer;font-weight:bold;font-size:14px;" title="Hapus termin ini">&#10005;</span>';
+                }
             }
         ],
         listeners: {
             afteredit: function (e) {
                 if (e.field === 'pay') {
+                    autoMode = false; allocNote = '';                                       // [FIX] diedit manual -> keluar dari mode alokasi otomatis
                     var v = round2(e.value), max = maxPay(round2(e.record.get('remaining')));     // [MULTI-CURRENCY] batas dalam mata uang pembayaran
                     if (v < 0) v = 0;
                     if (v > max) v = max;                       // tidak boleh melebihi sisa tagihan termin (setara IDR)
                     e.record.set('pay', v);
                     recalcAll();
                 }
+            },
+            // [NEW] klik kolom ✕ -> hapus termin yang salah entry (hanya yang belum ada pembayaran)
+            cellclick: function (grid, rowIndex, columnIndex) {
+                if (grid.getColumnModel().getColumnId(columnIndex) !== 'ppDeleteCol') return;
+                var rec = grid.getStore().getAt(rowIndex);
+                if (rec) deleteTermin(rec);
             }
         }
     });
@@ -357,12 +408,23 @@ Ext.onReady(function () {
             mkBtn('btnPpPayAll', 'Lunasi Semua Sisa', '#555555', payAllRemaining);
 
             var totalsDiv = document.createElement('div');
-            totalsDiv.style.cssText = 'padding:10px 14px; margin-top:8px; font-weight:bold; font-size:14px; text-align:right; background:#1f2d3a; color:#ffffff !important; border-radius:4px;';
+            totalsDiv.style.cssText = 'padding:10px 14px; margin-top:8px; font-weight:bold; font-size:14px; font-family:arial; text-align:right; background:#1f2d3a; color:#ffffff !important; border-radius:4px;';
             totalsDiv.innerHTML = '<div>Total Dialokasikan: <span id="lblPpAlloc" style="color:#ffffff !important;">0.00</span></div>' +
-                                  '<div id="lblPpExcess" style="font-size:12px; font-weight:normal; margin-top:4px;"></div>';
+                                  '<div id="lblPpSplit" style="font-size:14px; font-family:arial; line-height:22px; font-weight:normal; margin-top:4px; color:#c8dde6;"></div>' +
+                                  '<div id="lblPpExcess" style="font-size:14px; font-family:arial; line-height:22px; font-weight:normal; margin-top:4px;"></div>';     // [FIX] font = ringkasan kontrak di atas
             g.parentNode.insertBefore(totalsDiv, g.nextSibling);
         }
     })();
+
+    // [FIX] tinggi grid termin = sisa ruang di editor (agar semua baris termin + total terlihat); editor tetap bisa di-scroll bila masih kurang
+    function fitGrid() {
+        var ef = document.getElementById('editorForm'), ld = document.getElementById('lblPpAlloc');
+        if (!ef || !ld || !itemGrid.rendered || ef.offsetHeight === 0) return;
+        var tot = ld.parentNode.parentNode;
+        var avail = ef.getBoundingClientRect().bottom - itemGrid.getEl().dom.getBoundingClientRect().top - tot.offsetHeight - 24;
+        itemGrid.setHeight(Math.max(120, Math.floor(avail)));
+    }
+    Ext.EventManager.onWindowResize(fitGrid);
 
     // Form header dibuat saat editor dibuka pertama kali (container hidden -> lebar kolom 0 bila dirender lebih awal)
     function ensureHdrForm() {
@@ -391,7 +453,7 @@ Ext.onReady(function () {
         fRateInfo = new Ext.form.DisplayField({ fieldLabel: 'Sumber Kurs', value: '-', anchor: '98%' });
         fAccount = new myComboField({
             fieldLabel: 'Akun Kas/Bank', store: accountDs, displayField: 'label', valueField: 'id',
-            mode: 'local', triggerAction: 'all', forceSelection: true, anchor: '95%'
+            mode: 'local', triggerAction: 'all', forceSelection: true, allowBlank: false, anchor: '95%'     // [JURNAL] wajib
         });
         fMethod = new myComboField({
             fieldLabel: 'Metode', store: methodDs, displayField: 'name', valueField: 'id',
@@ -402,7 +464,11 @@ Ext.onReady(function () {
             fieldLabel: 'Jumlah Diterima', decimalPrecision: 2, value: 0, width: 140,
             listeners: {
                 change: function () {
-                    totalManual = (parseFloat(fTotal.getValue()) || 0) > 0;   // dikosongkan -> ikut total alokasi lagi
+                    totalManual = numVal(fTotal) > 0;   // dikosongkan -> ikut total alokasi lagi
+                    if (autoMode) {                                                    // [AUTO-ALLOC] alokasi otomatis tiap Jumlah Diterima berubah
+                        if (totalManual && curRate() > 0) { autoAllocate(true); return; }
+                        if (!totalManual) outDs.each(function (r) { r.set('pay', 0); r.set('pay_idr', 0); });   // total dikosongkan -> alokasi dibersihkan
+                    }
                     recalcAll();
                 }
             }
@@ -444,25 +510,33 @@ Ext.onReady(function () {
         fNotes.setValue('');
         fTotal.setValue(0);
         totalManual = false;
+        autoMode = true;                // [AUTO-ALLOC]
+        allocNote = '';
         projSummary = [];
         describeContract();
     }
 
     // [MULTI-PROYEK] Ringkasan kontrak: total semua proyek client + rincian per proyek (bila > 1 proyek)
+    // REMARK (FIX): font & line-height dipaksa inline (tema form membuat teks DisplayField kecil & rapat); tiap proyek = 1 baris (div)
     function describeContract() {
         if (!fClient || !fClient.getValue()) { fInfo.setValue(''); return; }
         var cv = 0, tt = 0, tp = 0, bt = 0, lines = '';
         Ext.each(projSummary, function (p) {
             var bel = Math.max(p.contract_value - p.total_termin, 0);
             cv += p.contract_value; tt += p.total_termin; tp += p.total_paid; bt += bel;
-            lines += '<br/><span style="color:#668894;">&bull; ' + enc(p.project_name) + ': kontrak ' + fmtAmt(p.contract_value) +
-                     ' | termin ' + fmtAmt(p.total_termin) + ' | dibayar ' + fmtAmt(p.total_paid) + ' | belum ditagihkan ' + fmtAmt(bel) + '</span>';
+            lines += '<div style="font-size:14px; font-family: arial;line-height:22px; color:#c8dde6;">&bull; <b>' + enc(p.project_name) + '</b>' +
+                     ' &nbsp;&ndash;&nbsp; kontrak <b>' + fmtAmt(p.contract_value) + '</b>' +
+                     ' &nbsp;|&nbsp; termin <b>' + fmtAmt(p.total_termin) + '</b>' +
+                     ' &nbsp;|&nbsp; dibayar <b>' + fmtAmt(p.total_paid) + '</b>' +
+                     ' &nbsp;|&nbsp; belum ditagihkan <b>' + fmtAmt(bel) + '</b></div>';
         });
         var multi = projSummary.length > 1;
-        fInfo.setValue('<span style="color:#9fc3d1;">' + (multi ? ('Total ' + projSummary.length + ' proyek - ') : '') +
+        fInfo.setValue('<div style="padding:6px 2px 2px 2px;">' +
+                       '<div style="font-size:14px; line-height:24px; color:#ffffff;">' + (multi ? ('Total ' + projSummary.length + ' proyek &nbsp;&ndash;&nbsp; ') : '') +
                        'Nilai kontrak: <b>' + fmtAmt(cv) + '</b> &nbsp;|&nbsp; Total termin: <b>' + fmtAmt(tt) +
-                       '</b> &nbsp;|&nbsp; Sudah dibayar: <b>' + fmtAmt(tp) + '</b> &nbsp;|&nbsp; Belum ditagihkan: <b>' + fmtAmt(bt) + '</b></span>' +
-                       (multi ? lines : ''));
+                       '</b> &nbsp;|&nbsp; Sudah dibayar: <b>' + fmtAmt(tp) + '</b> &nbsp;|&nbsp; Belum ditagihkan: <b>' + fmtAmt(bt) + '</b></div>' +
+                       (multi ? ('<div style="margin-top:4px;">' + lines + '</div>') : '') + '</div>');
+        setTimeout(fitGrid, 0);                                                          // [FIX] tinggi ringkasan kontrak berubah
     }
 
     // [MULTI-PROYEK] Muat termin outstanding SEMUA proyek milik client; nilai 'pay' yang sudah diisi dipertahankan bila termin masih ada
@@ -497,7 +571,8 @@ Ext.onReady(function () {
                     if (p !== undefined) r.set('pay', Math.min(round2(p), round2(r.get('remaining'))));
                 });
                 describeContract();
-                recalcAll();
+                if (autoMode && numVal(fTotal) > 0 && curRate() > 0) { totalManual = true; autoAllocate(true); }     // [AUTO-ALLOC] termin (re)load -> bagi ulang
+                else recalcAll();
                 if (cb) cb();
             }
         });
@@ -507,6 +582,8 @@ Ext.onReady(function () {
     function onClientChange() {
         outDs.removeAll();
         totalManual = false;
+        autoMode = true;                // [AUTO-ALLOC]
+        allocNote = '';
         fTotal.setValue(0);
         loadOutstanding(fClient.getValue());
     }
@@ -559,6 +636,8 @@ Ext.onReady(function () {
         rateManual = false;
         outDs.each(function (r) { r.set('pay', 0); r.set('pay_idr', 0); });
         totalManual = false;
+        autoMode = true;                // [AUTO-ALLOC]
+        allocNote = '';
         fTotal.setValue(0);
         applyCurrencyLabels();
         refreshRate();
@@ -595,29 +674,175 @@ Ext.onReady(function () {
             else if (excess > VEPS) ex.innerHTML = '<span style="color:#e6a817;">Lebih bayar ' + fmtAmt(excess) + ' ' + enc(code) + ' (dicatat sebagai excess, tidak dialokasikan ke termin).</span>';
             else ex.innerHTML = '';
         }
+        // [AUTO-ALLOC] ringkasan porsi alokasi per proyek (tampil bila > 1 proyek terisi)
+        var sp = document.getElementById('lblPpSplit');
+        if (sp) {
+            var sums = {}, names = [];
+            outDs.each(function (r) {
+                var pv = parseFloat(r.get('pay')) || 0;
+                if (pv <= 0) return;
+                var k = r.get('project_name');
+                if (sums[k] === undefined) { sums[k] = 0; names.push(k); }
+                sums[k] += pv;
+            });
+            if (names.length > 1 && alloc > 0) {
+                var parts = [];
+                Ext.each(names, function (k) {
+                    parts.push(enc(k) + ' <b>' + Ext.util.Format.number(sums[k] / alloc * 100, '0.0') + '%</b> (' + fmtAmt(sums[k]) + ')');
+                });
+                sp.innerHTML = 'Porsi per proyek: ' + parts.join(' &nbsp;|&nbsp; ');
+            } else {
+                sp.innerHTML = '';
+            }
+            if (allocNote) sp.innerHTML += (sp.innerHTML ? '<br/>' : '') + '<span style="color:#e6c36a;">' + allocNote + '</span>';     // [RULE-TERMIN]
+        }
+        fitGrid();                                                                       // [FIX] tinggi footer berubah -> sesuaikan grid
     }
 
-    // Distribusikan Jumlah Diterima ke termin berurutan (tanggal termin terlama dulu, lintas proyek)
-    function autoAllocate() {
-        var total = parseFloat(fTotal.getValue()) || 0;
-        if (total <= 0) { Ext.Msg.alert('Peringatan', 'Isi Jumlah Diterima terlebih dahulu.'); return; }
-        if (!(curRate() > 0)) { Ext.Msg.alert('Peringatan', 'Isi kurs ' + curCode() + ' terlebih dahulu.'); return; }
-        var left = total;
-        outDs.each(function (r) {
-            var pay = Math.min(left, maxPay(round2(r.get('remaining'))));     // [MULTI-CURRENCY] batas per termin dalam mata uang pembayaran
-            if (pay < 0) pay = 0;
-            r.set('pay', round2(pay));
-            left = round2(left - pay);
+    // [AUTO-ALLOC][RULE-TERMIN] Bagi Jumlah Diterima OTOMATIS ke proyek milik client. Semua hitungan dalam IDR, lalu dikonversi ke mata uang bayar.
+    //  1. Jumlah diterima >= total sisa tagihan semua termin  -> semua termin LUNAS; kelebihannya = lebih bayar (deposit client / excess_amount).
+    //  2. Jumlah diterima <  total sisa tagihan -> tiap proyek (yang punya termin outstanding) dihitung dua angka, DIAMBIL YANG BESAR
+    //     supaya proyek lebih cepat lunas:
+    //       a. Porsi proporsional  = diterima x kontrak proyek / total kontrak proyek peserta  (semua kontrak 0 -> bagi rata)
+    //       b. Aturan termin       = % kontrak sesuai urutan termin yang akan dibayar (termin 1 = 30%, termin 2 = 20%, TERMIN_RULE_PCT);
+    //                                proyek yang belum pernah dibayar = DP 30% kontrak. Bila termin tsb sudah dicicil, dikurangi yang sudah dibayar.
+    //     Angka terbesar dibatasi total sisa termin proyek. Bila jumlah semua target > uang diterima -> target diskalakan proporsional.
+    //     Bila target < uang diterima (karena batas sisa termin) -> sisanya dibagi lagi proporsional kontrak ke proyek yang masih punya ruang.
+    //  3. Di dalam proyek, porsi diisikan ke termin berurutan dari tanggal terlama. Sisa yang tak tertampung = lebih bayar (excess).
+    //  silent = dipanggil otomatis (tanpa popup peringatan)
+    function autoAllocate(silent) {
+        silent = (silent === true);                         // klik tombol mengirim event -> bukan silent
+        itemGrid.stopEditing();
+        var total = numVal(fTotal), rate = curRate();
+        if (total <= 0) { if (!silent) Ext.Msg.alert('Peringatan', 'Isi Jumlah Diterima terlebih dahulu.'); return; }
+        if (!(rate > 0)) { if (!silent) Ext.Msg.alert('Peringatan', 'Isi kurs ' + curCode() + ' terlebih dahulu.'); return; }
+        if (!outDs.getCount()) { if (!silent) Ext.Msg.alert('Peringatan', 'Belum ada termin yang bisa dialokasikan. Pilih client atau tambah termin dulu.'); return; }
+
+        var totalIdr = round2(total * rate);                // [RULE-TERMIN] hitung dalam IDR
+        var smap = {};
+        Ext.each(projSummary, function (p) { smap[p.project_id] = p; });
+
+        // kelompokkan termin per proyek (urutan termin = urutan tanggal dari backend)
+        var recs = outDs.getRange(), groups = {}, order = [], i, sumRemain = 0, sumContract = 0;
+        for (i = 0; i < recs.length; i++) {
+            var pid = recs[i].get('project_id'), rem = round2(recs[i].get('remaining'));
+            if (!groups[pid]) { groups[pid] = { recs: [], cap: 0, given: 0, w: 0, prop: 0, rule: 0, want: 0, name: recs[i].get('project_name') }; order.push(pid); }
+            groups[pid].recs.push(recs[i]);
+            groups[pid].cap = round2(groups[pid].cap + rem);
+            sumRemain = round2(sumRemain + rem);
+        }
+        Ext.each(order, function (id) {
+            var sm = smap[id];
+            groups[id].contract = sm ? sm.contract_value : 0;
+            groups[id].everPaid = !!sm && sm.total_paid > VEPS;
+            sumContract += groups[id].contract;
         });
+
+        var notes = [];
+        if (totalIdr + VEPS >= sumRemain) {
+            // (1) uang diterima cukup untuk semua termin -> lunas semua, sisanya deposit
+            Ext.each(order, function (id) { groups[id].given = groups[id].cap; });
+            notes.push('Jumlah diterima &ge; total sisa tagihan (' + fmtAmt(sumRemain) + ' IDR): semua termin dilunasi, kelebihan dicatat sebagai deposit client.');
+        } else {
+            // (2) uang kurang -> bandingkan porsi proporsional vs aturan termin, ambil yang besar
+            var sumWant = 0;
+            Ext.each(order, function (id) {
+                var g = groups[id], first = g.recs[0];
+                g.w = sumContract > 0 ? g.contract : 1;                                        // semua kontrak 0 -> bagi rata
+                g.prop = round2(totalIdr * g.w / (sumContract > 0 ? sumContract : order.length));
+                var n = parseInt(first.get('termin_no'), 10) || 1;
+                var pct = g.everPaid ? (TERMIN_RULE_PCT[n] || 0) : DP_PCT;                    // belum pernah bayar -> DP 30%
+                g.ruleLabel = g.everPaid ? ('termin ke-' + n + ' ' + pct + '%') : ('DP ' + pct + '%');
+                g.rule = Math.max(round2(g.contract * pct / 100) - round2(first.get('paid_amount')), 0);   // kurangi cicilan termin tsb
+                g.want = Math.min(Math.max(g.prop, g.rule), g.cap);                           // ambil angka terbesar, maks sisa termin proyek
+                sumWant = round2(sumWant + g.want);
+            });
+            var left = totalIdr;
+            if (sumWant > totalIdr) {
+                // target melebihi uang diterima -> skala proporsional
+                var f = totalIdr / sumWant, used = 0;
+                Ext.each(order, function (id) { var g = groups[id]; g.given = Math.min(round2(g.want * f), g.cap); used = round2(used + g.given); });
+                left = round2(totalIdr - used);
+            } else {
+                Ext.each(order, function (id) { groups[id].given = groups[id].want; });
+                left = round2(totalIdr - sumWant);
+            }
+            // sisa dana (batas sisa termin / pembulatan) -> bagi proporsional kontrak ke proyek yang masih punya ruang
+            var active = order.slice();
+            for (var guard = 0; guard < 50 && left >= 0.01 && active.length; guard++) {
+                var wsum = 0, used2 = 0, next = [];
+                Ext.each(active, function (id) { wsum += groups[id].w; });
+                if (!(wsum > 0)) break;
+                Ext.each(active, function (id) {
+                    var g = groups[id], room = round2(g.cap - g.given);
+                    var take = Math.min(round2(left * g.w / wsum), room, round2(left - used2));
+                    if (take > 0) { g.given = round2(g.given + take); used2 = round2(used2 + take); }
+                    if (round2(g.cap - g.given) >= 0.01) next.push(id);
+                });
+                if (used2 < 0.01) break;
+                left = round2(left - used2);
+                active = next;
+            }
+            for (i = 0; i < order.length && left >= 0.01; i++) {                              // sisa receh -> isi berurutan
+                var g2 = groups[order[i]], t2 = Math.min(left, round2(g2.cap - g2.given));
+                if (t2 > 0) { g2.given = round2(g2.given + t2); left = round2(left - t2); }
+            }
+            if (left <= -0.01) {                                                              // [FIX] pembulatan skala melebihi uang diterima (mis. +0.01)
+                var big = order[0];
+                Ext.each(order, function (id) { if (groups[id].given > groups[big].given) big = id; });
+                groups[big].given = round2(groups[big].given + left);
+                left = 0;
+            }
+            Ext.each(order, function (id) {
+                var g = groups[id];
+                notes.push('&bull; ' + enc(g.name) + ': ' + enc(g.ruleLabel) + ' = ' + fmtAmt(g.rule) + ' | proporsional = ' + fmtAmt(g.prop) +
+                           ' &rarr; target ' + fmtAmt(g.want) + (Math.abs(g.given - g.want) >= 0.01 ? ' (disesuaikan menjadi ' + fmtAmt(g.given) + ')' : ''));
+            });
+        }
+
+        // porsi proyek (IDR) -> termin berurutan; konversi ke mata uang pembayaran
+        Ext.each(order, function (id) {
+            var rest = groups[id].given;
+            Ext.each(groups[id].recs, function (r) {
+                var rm = round2(r.get('remaining'));
+                var idr = Math.min(rest, rm);
+                var pay = (idr >= rm - VEPS) ? maxPay(rm) : round2(idr / rate);
+                if (!(pay > 0)) pay = 0;
+                r.set('pay', round2(pay));
+                rest = round2(rest - idr);
+            });
+        });
+        allocNote = notes.join('<br/>');
+        autoMode = true;
         totalManual = true;
         recalcAll();
+        itemGrid.getView().refresh();
     }
 
     function payAllRemaining() {
+        itemGrid.stopEditing();
         if (!(curRate() > 0)) { Ext.Msg.alert('Peringatan', 'Isi kurs ' + curCode() + ' terlebih dahulu.'); return; }
         outDs.each(function (r) { r.set('pay', maxPay(round2(r.get('remaining')))); });
+        autoMode = false;
+        allocNote = '';
         totalManual = false;
         recalcAll();
+    }
+
+    // [NEW] Hapus termin yang salah entry (tombol ✕ di grid). Backend hanya mengizinkan bila termin belum pernah dibayar.
+    function deleteTermin(rec) {
+        if (getFormAccess() < ACCESS_EDIT) { Ext.Msg.alert('Akses Ditolak', 'Anda tidak memiliki hak akses untuk menghapus termin.'); return; }
+        var cid = fClient.getValue();
+        Ext.Msg.confirm('Hapus Termin',
+            'Hapus termin <b>' + enc(rec.get('inv_no')) + '</b> (' + enc(rec.get('termin_name')) + ') proyek <b>' + enc(rec.get('project_name')) + '</b>?<br/>' +
+            'Termin dihapus permanen dari data proyek. Hanya bisa bila belum ada pembayaran.',
+            function (btn) {
+                if (btn !== 'yes') return;
+                ajax({ task: 'delete_termin', id: rec.get('invoice_id'), client_id: cid }, function (res) {
+                    Ext.Msg.alert(res.success ? 'Sukses' : 'Gagal', res.message || '');
+                    if (res.success) loadOutstanding(cid);      // muat ulang: grid + ringkasan kontrak (nilai pay lain dipertahankan)
+                });
+            });
     }
 
     // ---- Window Tambah Termin ----------------------------------------------
@@ -720,7 +945,10 @@ Ext.onReady(function () {
         if (addWdw) addWdw.style.display = 'none';
         document.getElementById('editorWdw').style.display = 'block';
         document.getElementById('editorFormHeaderText').innerHTML = '&nbsp;&nbsp;' + enc(title);
+        var ef = document.getElementById('editorForm');
+        if (ef) ef.style.overflowY = 'auto';                  // [FIX] editor bisa di-scroll
         ensureHdrForm();
+        setTimeout(function () { fitGrid(); try { itemGrid.getView().layout(); } catch (e) {} }, 50);
     }
 
     // ------------------------------------------------------------
@@ -743,6 +971,7 @@ Ext.onReady(function () {
     document.getElementById('saveEdit').onclick = function () {
         if (!fClient || !fClient.getValue()) { Ext.Msg.alert('Peringatan', 'Client wajib dipilih.'); return; }
         if (!fDate.getValue()) { Ext.Msg.alert('Peringatan', 'Tanggal pembayaran wajib diisi.'); return; }
+        if (!fAccount.getValue()) { Ext.Msg.alert('Peringatan', 'Akun Kas/Bank wajib dipilih.'); return; }     // [JURNAL]
         var cid = fClient.getValue();
         if (!isBaseCur(curId()) && !(curRate() > 0)) { Ext.Msg.alert('Peringatan', 'Kurs ' + curCode() + ' wajib diisi.'); return; }     // [MULTI-CURRENCY]
 

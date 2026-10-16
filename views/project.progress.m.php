@@ -1,4 +1,5 @@
 <?php
+header('ngrok-skip-browser-warning: 1');
     /*
     Document        : Lapor Progress (Mobile / PWA)
     Description     : Lapangan mengajukan KLAIM progress dari HP (foto bukti, GPS, antrean offline).

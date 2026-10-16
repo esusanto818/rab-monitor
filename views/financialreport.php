@@ -10,7 +10,11 @@
 <html>
     <head>
         <title id="page-title">Financial Report</title>
+        <link rel="stylesheet" type="text/css" href="/proyek/ext-3.4.1/resources/css/ext-all.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/mainCSS.css" />
         <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/frm.css" />
         <style>
             .fr-table td { padding: 4px 6px; font-size: 13px; }
         </style>

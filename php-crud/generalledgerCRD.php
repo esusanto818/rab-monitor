@@ -12,6 +12,9 @@
                   - Saldo berjalan dihitung PER AKUN pakai window function
                     (PARTITION BY account_id), ditambah saldo awal per akun
                     (0 kalau periode tidak difilter).
+  [FIX-BANKCASH] Akun bank & cash diperlakukan debit-normal (sama dengan asset),
+                    konsisten dengan Neraca. Sebelumnya saldo berjalan akun
+                    Kas/Bank tampil terbalik (minus).
 */
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 
@@ -107,7 +110,7 @@ switch ($task) {
                 $openingCond .= " AND l2.account_id = :ob_acc";
             }
             $openingSubquery = "(
-                SELECT COALESCE(SUM(CASE WHEN c2.account_type IN ('asset','expense') THEN l2.debit - l2.credit ELSE l2.credit - l2.debit END), 0)
+                SELECT COALESCE(SUM(CASE WHEN c2.account_type IN ('asset','bank','cash','expense') THEN l2.debit - l2.credit ELSE l2.credit - l2.debit END), 0)
                 FROM journal_lines l2
                 JOIN journal_entries j2 ON j2.id = l2.journal_id
                 JOIN chart_of_accounts c2 ON c2.id = l2.account_id
@@ -121,7 +124,7 @@ switch ($task) {
             SELECT j.journal_date, j.ref_no, l.description AS line_desc, j.description AS header_desc,
                    l.debit, l.credit, l.account_id, c.account_code, c.account_name, c.account_type,
                    {$openingSubquery} AS opening_balance,
-                   SUM(CASE WHEN c.account_type IN ('asset','expense') THEN l.debit - l.credit ELSE l.credit - l.debit END)
+                   SUM(CASE WHEN c.account_type IN ('asset','bank','cash','expense') THEN l.debit - l.credit ELSE l.credit - l.debit END)
                      OVER (PARTITION BY l.account_id ORDER BY j.journal_date, j.id, l.id
                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum_in_range
             FROM journal_lines l

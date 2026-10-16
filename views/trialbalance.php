@@ -10,7 +10,11 @@
 <html>
     <head>
         <title id="page-title">[TB] Trial Balance</title>
+        <link rel="stylesheet" type="text/css" href="/proyek/ext-3.4.1/resources/css/ext-all.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/mainCSS.css" />
         <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/frm.css" />
     </head>
     <body>
     </body>

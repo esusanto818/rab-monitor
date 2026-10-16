@@ -2,45 +2,36 @@
 /**
  * warehouse.issuingCRD.php — Warehouse Issuing (material out ke proyek)
  *
- * Aturan issue per material:
- *   1. Material harus sudah di-RCV di gudang (stok W/H > 0).
+ * Aturan issue per material (NEW):
+ *   1. Material harus sudah di-RCV di gudang proyek (stok W/H > 0).
  *   2. qty issue <= stok di W/H.
  *   3. Total issue proyek (posted) + qty ini <= RAB qty_plan x (1 + 5%).
  *      Bila melewati qty RAB tapi masih dalam +5% -> is_overbudget = true (allowance terpakai).
  *   Nilai issue = FIFO dari layer RCV (stock_movements IN).
  *
- * [CHANGED] Gudang utama dipakai bersama (sama seperti modul Retur Pembelian):
- *           - lookup_warehouses : semua gudang aktif yang MASIH ADA material (stok > 0),
- *             tidak lagi dibatasi warehouses.project_id.
- *           - save              : validasi "gudang terdaftar untuk proyek" dinonaktifkan.
- *           Kuota RAB +5% tetap dihitung per proyek.
+ * [JURNAL][NEW] Issue ke proyek (issue_type = 'PROJECT') memposting jurnal otomatis lewat AutoPostJournal
+ *   rule fiscal_config 'ISSUE_PROJECT' (default Dr WIP / Cr Persediaan Bahan Baku), reference_type = 'material_out',
+ *   nilai = total FIFO (SUM qty_out x unit_cost). Gagal posting = issue dibatalkan (rollback).
+ *   Reverse issue menghapus jurnalnya (ReverseJournalByReference).
+ *   Issue Retur Supplier (issue_type = 'SUPPLIER_RETURN') TIDAK dijurnal di sini (diurus modul Retur Supplier).
+ *   Catatan: modul ini memakai koneksi pg_* ($conn), AutoPostJournal memakai PDO (class crud) = koneksi terpisah.
+ *   Jurnal diposting tepat sebelum COMMIT dokumen; bila jurnal gagal, dokumen di-ROLLBACK.
  *
- * [NEW 2026-10-11] Jurnal otomatis (posted): issue Dr 1700 WIP / Cr 1500 Persediaan; reverse issue -> jurnal pembalik.
- *                  Mapping akun di fiscal_config (ISSUE_PROJECT). Helper: php-func/journal.stock.php
- *
- * [NEW 2026-10-11] Alur issue RETUR SUPPLIER (dibuat Pembelian lewat Retur Pembelian -> status 'pending'):
- *          prepare : gudang menandai barang sudah disiapkan (pending -> prepared; retur -> Disiapkan)
- *          deliver : gudang mengonfirmasi barang SUDAH DIKIRIM (prepared -> posted; retur -> Dikirim)
- *                    -> di sini stok keluar FIFO + jurnal Dr 2600 / Cr 1500 dibuat (sebelumnya saat tombol Kirim retur).
- *          Issue proyek tetap langsung posted seperti biasa.
- *
- * [NEW 2026-10-11 #2] No. Surat Jalan dibuat OTOMATIS oleh sistem (format SJ-YYMM-NNNNN, kolom material_out_header.delivery_note_no),
- *          bukan lagi diisi manual. Nomor diberikan saat 'Siap Kirim' (agar surat jalan yang dicetak sudah bernomor);
- *          dokumen yang sudah prepared sebelum perubahan ini mendapat nomor saat 'Konfirmasi Dikirim'.
- *          List juga mengirim data pengiriman (SJ, kurir, penerima) untuk ditampilkan di main grid; pencarian mencakup SJ / penerima.
- *
- * Action: list | detail | lookup_projects | lookup_warehouses | lookup_materials | save | reverse | prepare | deliver | upload_proof
+ * Action: list | detail | lookup_projects | lookup_warehouses | lookup_materials | save | reverse |
+ *         backfill_issue_journal ([JURNAL][NEW] sekali jalan: jurnal untuk issue lama yang belum berjurnal)
  */
 ob_start();
 ini_set('display_errors', '0');
 require_once '../php-func/function.all.php';
 require_once '../php-class/crudClass.php';
 require_once '../php-func/function.stock.php';
-require_once '../php-func/journal.stock.php';     // [NEW 2026-10-11] jurnal otomatis (JrnPost / JrnReverseByRef)
+
+if (session_status() === PHP_SESSION_NONE) { session_start(); }   // [JURNAL] AutoPostJournal membaca $_SESSION['user_id']
 
 define('ISSUE_ALLOWANCE_PCT', 5.0);          // allowance di atas qty RAB (%)
 define('ISSUE_REF_TYPE', 'MATERIAL_OUT');    // reference_type di stock_movements
-define('ISSUE_TYPE_RETURN', 'SUPPLIER_RETURN');   // [NEW] issue_type dokumen retur supplier
+define('ISSUE_JOURNAL_REF', 'material_out'); // [JURNAL][NEW] nilai enum journal_entries.reference_type
+define('ISSUE_JOURNAL_RULE', 'ISSUE_PROJECT'); // [JURNAL][NEW] rule_code di fiscal_config
 
 $action = WhReq('action', 'list');
 
@@ -53,9 +44,7 @@ try {
         case 'lookup_materials':  IssLookupMaterials(); break;
         case 'save':              IssSave(); break;
         case 'reverse':           IssReverse(); break;
-        case 'prepare':           IssPrepare(); break;   // [NEW] gudang: Siap Kirim
-        case 'deliver':           IssDeliver(); break;   // [NEW] gudang: Konfirmasi Dikirim
-        case 'upload_proof':      IssUploadProof(); break;   // [NEW] unggah foto / PDF bukti pengiriman
+        case 'backfill_issue_journal': IssBackfillJournal(); break;   // [JURNAL][NEW]
         default: throw new WhException('Action tidak dikenali.');
     }
 } catch (WhException $e) {
@@ -68,6 +57,30 @@ try {
 }
 
 /* ------------------------------------------------------------------ */
+// [JURNAL][NEW] Koneksi PDO (class crud) untuk AutoPostJournal / ReverseJournalByReference
+function IssJournalDb() {
+    static $d = null;
+    if ($d === null) { $d = new crud(); }
+    return $d;
+}
+
+// [JURNAL][NEW] Posting jurnal issue proyek. Nilai <= 0 (mis. unit_cost belum terisi) -> tidak dijurnal.
+function IssPostJournal($hdrId, $refNo, $projectId, $date, $total) {
+    $total = round((float)$total, 2);
+    if ($total <= 0.004) { return false; }
+    $p = WhRow('SELECT name FROM projects WHERE id=$1', array((int)$projectId));
+    $jr = AutoPostJournal(IssJournalDb(), array(
+        'rule_code'      => ISSUE_JOURNAL_RULE,
+        'reference_type' => ISSUE_JOURNAL_REF,
+        'reference_id'   => (int)$hdrId,
+        'journal_date'   => $date,
+        'amount'         => $total,
+        'description'    => 'Issue material ' . $refNo . ' - ' . ($p ? $p['name'] : ('proyek #' . $projectId)),
+    ));
+    if (!$jr['success']) { throw new WhException('Gagal posting jurnal issue: ' . $jr['message']); }
+    return true;
+}
+
 // Info RAB & akumulasi issue proyek untuk satu material
 function IssRabInfo($projectId, $materialId) {
     $rab = WhRow("SELECT COALESCE(SUM(qty_plan),0) AS q FROM budget_items
@@ -75,21 +88,9 @@ function IssRabInfo($projectId, $materialId) {
     $iss = WhRow("SELECT COALESCE(SUM(i.qty_out),0) AS q
                   FROM material_out_items i JOIN material_out_header h ON h.id=i.material_out_id
                   WHERE h.project_id=$1 AND i.material_id=$2 AND h.status='posted'
-                    AND h.issue_type='PROJECT'", // issue retur supplier tidak memakan kuota RAB
+                    AND h.issue_type='PROJECT'", // [CHANGED] issue retur supplier tidak memakan kuota RAB
                  array((int)$projectId, (int)$materialId));
     return array('rab_qty' => round((float)$rab['q'], 4), 'issued' => round((float)$iss['q'], 4));
-}
-
-// [NEW] No. Surat Jalan otomatis: SJ-YYMM-NNNNN (YYMM dari tanggal dokumen, urut per bulan).
-//       WAJIB dipanggil di dalam transaksi (advisory lock per-transaksi mencegah dua dokumen mendapat nomor sama).
-//       Tidak memakai CreateRefNo() karena kolom delivery_note_no bisa berisi nomor manual lama yang bukan format SJ.
-function IssNextSjNo($date) {
-    $ts = strtotime($date);
-    $prefix = 'SJ-' . date('ym', $ts ? $ts : time()) . '-';
-    WhRow('SELECT pg_advisory_xact_lock(hashtext($1)) AS l', array('material_out_sj_no'));
-    $r = WhRow('SELECT COALESCE(MAX(CAST(RIGHT(delivery_note_no, 5) AS integer)), 0) AS n
-                FROM material_out_header WHERE delivery_note_no ~ $1', array('^' . $prefix . '[0-9]{5}$'));
-    return $prefix . str_pad((string)((int)$r['n'] + 1), 5, '0', STR_PAD_LEFT);
 }
 
 function IssList() {
@@ -99,30 +100,22 @@ function IssList() {
     $where = '1=1';
     if ($q !== '') {
         $params[] = '%' . $q . '%';
-        $where .= ' AND (h.ref_no ILIKE $1 OR p.name ILIKE $1 OR h.received_by_mandor ILIKE $1 OR rt.ref_no ILIKE $1
-                   OR h.delivery_note_no ILIKE $1 OR h.delivery_receiver ILIKE $1)';   // [NEW] cari juga lewat no. retur / no. SJ / penerima
+        $where .= ' AND (h.ref_no ILIKE $1 OR p.name ILIKE $1 OR h.received_by_mandor ILIKE $1)';
     }
     $c = WhRow("SELECT COUNT(*) AS n FROM material_out_header h
-                JOIN projects p ON p.id=h.project_id
-                LEFT JOIN supplier_return_hdr rt ON rt.material_out_id=h.id   -- [NEW]
-                WHERE $where", $params);
+                JOIN projects p ON p.id=h.project_id WHERE $where", $params);
 
     $params[] = $limit;  $pl = '$' . count($params);
     $params[] = $start;  $ps = '$' . count($params);
     $rows = WhRows("SELECT h.id, h.ref_no, h.project_id, p.name AS project_name,
                            h.warehouse_id, w.name AS warehouse_name, h.issue_date,
                            h.received_by_mandor, h.status, h.remark, h.issue_type,
-                           h.prepared_at, h.delivery_date, h.delivery_note_no, h.delivery_receiver, h.delivery_proof,   -- [NEW]
-                           rt.ref_no AS return_ref_no, rt.status AS return_status,      -- [NEW] info retur asal + pengiriman
-                           rt.sent_date, rt.carrier, rs.name AS return_supplier_name,   -- [NEW]
                            COALESCE(t.total_amount,0) AS total_amount,
                            COALESCE(t.line_count,0)   AS line_count,
                            COALESCE(t.has_over,false) AS has_overbudget
                     FROM material_out_header h
                     JOIN projects   p ON p.id=h.project_id
                     JOIN warehouses w ON w.id=h.warehouse_id
-                    LEFT JOIN supplier_return_hdr rt ON rt.material_out_id=h.id          -- [NEW]
-                    LEFT JOIN m_suppliers rs ON rs.id=rt.supplier_id                     -- [NEW]
                     LEFT JOIN (SELECT material_out_id, SUM(qty_out*unit_cost) AS total_amount,
                                       COUNT(*) AS line_count, BOOL_OR(is_overbudget) AS has_over
                                FROM material_out_items GROUP BY material_out_id) t ON t.material_out_id=h.id
@@ -154,22 +147,11 @@ function IssLookupProjects() {
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
 }
 
-// [CHANGED] Hanya gudang yang MASIH ADA material (stok > 0); tidak lagi dibatasi warehouses.project_id
-//           (gudang utama dipakai bersama, sama seperti modul Retur Pembelian).
-//           Gudang milik proyek terpilih diurutkan paling atas; nama diberi jumlah material berstok.
+// Hanya gudang milik proyek tsb (material proyek = stok di gudang proyek)
 function IssLookupWarehouses() {
     $pid = (int)WhReq('project_id');
-    $rows = WhRows("SELECT w.id, w.code,
-                           (w.name || ' (' || oh.item_count || ' material)') AS name
-                    FROM warehouses w
-                    JOIN (SELECT warehouse_id, COUNT(*) AS item_count
-                          FROM (SELECT warehouse_id, item_id
-                                FROM stock_movements
-                                GROUP BY warehouse_id, item_id
-                                HAVING SUM(CASE WHEN movement_type='IN' THEN qty ELSE -qty END) > 0) x
-                          GROUP BY warehouse_id) oh ON oh.warehouse_id = w.id
-                    WHERE w.active = true
-                    ORDER BY (w.project_id = $1) DESC NULLS LAST, w.name", array($pid));
+    $rows = WhRows("SELECT id, code, name FROM warehouses
+                    WHERE active=true AND project_id=$1 ORDER BY name", array($pid));
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
 }
 
@@ -222,8 +204,7 @@ function IssSave() {
 
     $wh = WhRow('SELECT id, project_id, active FROM warehouses WHERE id=$1', array($whId));
     if (!$wh || !WhBool($wh['active'])) { throw new WhException('Gudang tidak ditemukan / tidak aktif.'); }
-    // [CHANGED] gudang utama dipakai bersama -> validasi kepemilikan proyek dinonaktifkan
-    // if ((int)$wh['project_id'] !== $projectId) { throw new WhException('Gudang tidak terdaftar untuk proyek ini.'); }
+    if ((int)$wh['project_id'] !== $projectId) { throw new WhException('Gudang tidak terdaftar untuk proyek ini.'); }
 
     // Validasi & gabung baris duplikat per material
     $lines = array();
@@ -244,7 +225,6 @@ function IssSave() {
                 VALUES ($1,$2,$3,$4,$5,$6,'posted',$7) RETURNING id",
                array($refNo, $projectId, $whId, $date, $userId, $mandor, $remark));
     $hdrId = (int)$h['id'];
-    $issueValue = 0.0;                              // [NEW] akumulasi nilai FIFO untuk jurnal
 
     foreach ($lines as $mid => $ln) {
         $qty = $ln['qty'];
@@ -281,12 +261,13 @@ function IssSave() {
                 array($hdrId, $mid, $ly['qty'], round($ly['unit_cost'], 2), $over ? 't' : 'f', $reason, $ln['notes']));
             WhPostMovement($date, $mid, $whId, 'OUT', $ly['qty'], $ly['unit_cost'],
                            ISSUE_REF_TYPE, $hdrId, $refNo, 'Issue ke proyek', $userId);
-            $issueValue += $ly['qty'] * $ly['unit_cost'];   // [NEW]
         }
     }
-    // [NEW] Dr WIP (1700) / Cr Persediaan Bahan Baku (1500), langsung posted; gagal -> seluruh transaksi ROLLBACK
-    JrnPost('ISSUE_PROJECT', JRN_REF_ISSUE, $hdrId, $date, $issueValue,
-            'Issue material ke proyek - ' . $refNo, $userId);
+
+    // [JURNAL][NEW] posting jurnal issue (Dr WIP / Cr Persediaan, rule ISSUE_PROJECT) sebelum COMMIT; gagal -> ROLLBACK dokumen
+    $tot = WhRow('SELECT COALESCE(SUM(qty_out*unit_cost),0) AS t FROM material_out_items WHERE material_out_id=$1', array($hdrId));
+    IssPostJournal($hdrId, $refNo, $projectId, $date, $tot['t']);
+
     WhQ('COMMIT');
     WhOk('Issuing berhasil diposting. No: ' . $refNo, array('id' => $hdrId, 'ref_no' => $refNo));
 }
@@ -299,146 +280,37 @@ function IssReverse() {
     $h = WhRow('SELECT id, status, issue_type FROM material_out_header WHERE id=$1 FOR UPDATE', array($id));
     if (!$h) { throw new WhException('Dokumen tidak ditemukan.'); }
     if ($h['status'] !== 'posted') { throw new WhException('Hanya dokumen berstatus posted yang dapat di-reverse.'); }
-    // issue retur supplier harus dibatalkan lewat Retur Supplier (Batal Kirim) agar status klaim ikut konsisten
+    // [CHANGED] issue retur supplier harus dibatalkan lewat Retur Supplier (Batal Kirim) agar status klaim ikut konsisten
     if ($h['issue_type'] !== 'PROJECT') { throw new WhException('Dokumen ini adalah issue Retur Supplier. Gunakan Batal Kirim di modul Retur Supplier.'); }
     WhQ("UPDATE material_out_header SET status='reversed', reversed_at=now(), reversed_by=$2 WHERE id=$1",
         array($id, WhUserId()));
-    // [NEW] jurnal pembalik issue (dokumen lama tanpa jurnal dilewati)
-    JrnReverseByRef(JRN_REF_ISSUE, $id, date('Y-m-d'), WhUserId(), 'Reverse issue');
     WhDeleteMovementsByRef(ISSUE_REF_TYPE, $id);   // stok kembali; kuota RAB ikut pulih (status bukan posted)
+    ReverseJournalByReference(IssJournalDb(), ISSUE_JOURNAL_REF, $id);   // [JURNAL][NEW] hapus jurnal issue (issue lama tanpa jurnal -> 0 baris, aman)
     WhQ('COMMIT');
     WhOk('Dokumen issuing berhasil di-reverse.');
 }
 
-// [NEW] Gudang: barang issue retur sudah disiapkan (pending -> prepared); retur -> 'Disiapkan'
-function IssPrepare() {
-    WhRequirePost();
-    $id = (int)WhPost('id');
-    if ($id < 1) { throw new WhException('ID dokumen tidak valid.'); }
-    WhQ('BEGIN');
-    $h = WhRow('SELECT id, status, issue_type FROM material_out_header WHERE id=$1 FOR UPDATE', array($id));
-    if (!$h) { throw new WhException('Dokumen tidak ditemukan.'); }
-    if ($h['issue_type'] !== ISSUE_TYPE_RETURN) { throw new WhException('Siap Kirim hanya untuk issue Retur Supplier.'); }
-    if ($h['status'] !== 'pending') { throw new WhException('Hanya dokumen berstatus pending yang dapat ditandai Siap Kirim.'); }
-    $sjNo = IssNextSjNo(date('Y-m-d'));       // [NEW] No. Surat Jalan otomatis, diberikan saat Siap Kirim
-    WhQ("UPDATE material_out_header SET status='prepared', prepared_at=now(), prepared_by=$2, delivery_note_no=$3 WHERE id=$1",
-        array($id, WhUserId(), $sjNo));
-    WhQ("UPDATE supplier_return_hdr SET status='Disiapkan', updated_at=now() WHERE material_out_id=$1 AND status='Diperintahkan'",
-        array($id));
-    WhQ('COMMIT');
-    WhOk('Barang ditandai sudah disiapkan (Siap Kirim). No. Surat Jalan: ' . $sjNo . '. Menunggu konfirmasi pengiriman.', array('delivery_note_no' => $sjNo));   // [CHANGED]
-}
-
-// [NEW] Gudang: konfirmasi barang SUDAH DIKIRIM (prepared -> posted). Di sini stok keluar FIFO + jurnal dibuat.
-//       Sumber qty = supplier_return_dtl retur asal; item rencana (biaya 0) diganti item aktual per layer FIFO.
-function IssDeliver() {
-    WhRequirePost();
-    $id       = (int)WhPost('id');
-    $date     = WhDate(WhPost('delivery_date'), 'Tanggal kirim');
-    $carrier  = trim(WhPost('carrier'));
-    $receiver = trim(WhPost('receiver'));
-    // [CHANGED] delivery_note_no tidak lagi diterima dari klien -> dibuat otomatis oleh sistem
-    $proof    = trim(WhPost('delivery_proof'));
-    $userId   = WhUserId();
-    if ($id < 1) { throw new WhException('ID dokumen tidak valid.'); }
-    if ($carrier === '')  { throw new WhException('Kurir / kendaraan pengiriman wajib diisi.'); }
-    if ($receiver === '') { throw new WhException('Nama penerima wajib diisi.'); }
-    // [CHANGED] bukti = daftar URL (satu per baris) hasil unggah foto / PDF (maks 5 file); link http(s) manual tetap diterima
-    $proofs = array();
-    foreach (preg_split('/\r\n|\r|\n/', $proof) as $u) {
-        $u = trim($u);
-        if ($u === '') { continue; }
-        if (!preg_match('#^(https?://|/)#i', $u)) { throw new WhException('Bukti harus berupa file yang diunggah atau link http(s).'); }
-        $proofs[] = $u;
-    }
-    if (count($proofs) > 5) { throw new WhException('Bukti maksimal 5 file.'); }
-    $proof = implode("\n", $proofs);
-
-    WhQ('BEGIN');
-    $h = WhRow('SELECT id, ref_no, status, issue_type, warehouse_id, delivery_note_no FROM material_out_header WHERE id=$1 FOR UPDATE', array($id));
-    if (!$h) { throw new WhException('Dokumen tidak ditemukan.'); }
-    if ($h['issue_type'] !== ISSUE_TYPE_RETURN) { throw new WhException('Konfirmasi dikirim hanya untuk issue Retur Supplier.'); }
-    if ($h['status'] === 'pending') { throw new WhException('Tandai Siap Kirim terlebih dahulu sebelum konfirmasi dikirim.'); }
-    if ($h['status'] !== 'prepared') { throw new WhException('Hanya dokumen berstatus prepared yang dapat dikonfirmasi dikirim.'); }
-    $rt = WhRow('SELECT id, ref_no FROM supplier_return_hdr WHERE material_out_id=$1 FOR UPDATE', array($id));
-    if (!$rt) { throw new WhException('Dokumen retur asal tidak ditemukan.'); }
-    $whId  = (int)$h['warehouse_id'];
-    $refNo = $h['ref_no'];
-    // [NEW] No. Surat Jalan: pakai yang sudah dibuat saat Siap Kirim; dokumen lama (belum bernomor) dibuatkan sekarang
-    $sjNo = trim((string)$h['delivery_note_no']);
-    if ($sjNo === '') { $sjNo = IssNextSjNo($date); }
-    $dtl = WhRows('SELECT id, material_id, qty_claim, defect_type FROM supplier_return_dtl WHERE return_hdr_id=$1 ORDER BY material_id, id',
-                  array((int)$rt['id']));
-    if (!count($dtl)) { throw new WhException('Retur belum memiliki item.'); }
-
-    WhQ('DELETE FROM material_out_items WHERE material_out_id=$1', array($id));   // ganti item rencana dengan item aktual
-    $value = 0.0;
-    foreach ($dtl as $d) {
-        $mid = (int)$d['material_id'];
-        $qty = round((float)$d['qty_claim'], 4);
-        WhLock($mid, $whId);
-        $m = WhRow('SELECT material_name FROM materials WHERE id=$1', array($mid));
-        $onhand = WhOnHand($mid, $whId);
-        if ($qty > $onhand + 0.00005) {
-            throw new WhException('Stok ' . $m['material_name'] . ' di gudang (' . WhFmt($onhand) .
-                ') tidak cukup untuk dikirim (' . WhFmt($qty) . ').');
+// [JURNAL][NEW] Backfill sekali jalan: jurnal untuk issue proyek posted yang belum berjurnal. Idempotent.
+// Tiap issue diposting terpisah (koneksi PDO autocommit); bila satu gagal, proses berhenti & pesan menyebut nomor issue-nya,
+// yang sudah terposting tetap tersimpan dan dilewati pada pemanggilan berikutnya.
+function IssBackfillJournal() {
+    if (intval(isset($_SESSION['FormAccess']) ? $_SESSION['FormAccess'] : 0) < 3) { throw new WhException('Akses ditolak.'); }
+    $rows = WhRows("SELECT h.id, h.ref_no, h.project_id, h.issue_date,
+                           COALESCE((SELECT SUM(i.qty_out*i.unit_cost) FROM material_out_items i WHERE i.material_out_id=h.id),0) AS total
+                    FROM material_out_header h
+                    WHERE h.status='posted' AND h.issue_type='PROJECT'
+                      AND NOT EXISTS (SELECT 1 FROM journal_entries je
+                                       WHERE je.reference_type::text=$1 AND je.reference_id=h.id)
+                    ORDER BY h.issue_date ASC, h.id ASC", array(ISSUE_JOURNAL_REF));
+    $done = array(); $skipped = array();
+    foreach ($rows as $r) {
+        if (IssPostJournal((int)$r['id'], $r['ref_no'], (int)$r['project_id'], $r['issue_date'], $r['total'])) {
+            $done[] = $r['ref_no'];
+        } else {
+            $skipped[] = $r['ref_no'];     // nilai 0 -> tidak dijurnal
         }
-        $tot = 0.0;
-        foreach (WhFifoAllocate($mid, $whId, $qty) as $ly) {
-            WhQ("INSERT INTO material_out_items (material_out_id, material_id, qty_out, unit_cost, is_overbudget, notes)
-                 VALUES ($1,$2,$3,$4,'f',$5)",
-                array($id, $mid, $ly['qty'], round($ly['unit_cost'], 2), 'Retur cacat: ' . $d['defect_type']));
-            WhPostMovement($date, $mid, $whId, 'OUT', $ly['qty'], $ly['unit_cost'], ISSUE_REF_TYPE, $id, $refNo,
-                           'Retur supplier ' . $rt['ref_no'], $userId);
-            $tot += $ly['qty'] * $ly['unit_cost'];
-        }
-        WhQ('UPDATE supplier_return_dtl SET unit_cost=$2 WHERE id=$1', array((int)$d['id'], round($tot / $qty, 4)));
-        $value += $tot;
     }
-    // Dr GRN Clearing (2600) / Cr Persediaan Bahan Baku (1500), langsung posted; reference = retur (dibalik oleh Batal Kirim)
-    JrnPost('RETURN_SUPPLIER', JRN_REF_RETURN, (int)$rt['id'], $date, $value, 'Retur supplier ' . $rt['ref_no'], $userId);
-
-    WhQ("UPDATE material_out_header SET status='posted', issue_date=$2, received_by_mandor=$3, delivery_date=$2,
-                delivery_note_no=$4, delivery_receiver=$5, delivery_proof=$6 WHERE id=$1",
-        array($id, $date, $carrier, $sjNo, $receiver, $proof !== '' ? $proof : null));      // [CHANGED] $sjNo otomatis
-    WhQ("UPDATE supplier_return_hdr SET status='Dikirim', sent_date=$2, carrier=$3, updated_at=now() WHERE id=$1",
-        array((int)$rt['id'], $date, $carrier));
-    WhQ('COMMIT');
-    WhOk('Pengiriman dikonfirmasi. No. Surat Jalan: ' . $sjNo . '. Stok keluar dari gudang dan retur ' . $rt['ref_no'] . ' berstatus Dikirim.', array('delivery_note_no' => $sjNo));   // [CHANGED]
-}
-
-// [NEW] Unggah bukti pengiriman (foto / PDF, maks 5 MB) -> /proyek/uploads/delivery/, kembalikan URL.
-//       Pola sama dengan RtUploadEvidence di purchase.returnCRD.php.
-function IssUploadProof() {
-    WhRequirePost();
-    WhUserId();                                              // pastikan sesi valid
-    if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-        $code = isset($_FILES['file']['error']) ? (int)$_FILES['file']['error'] : -1;
-        throw new WhException('File gagal diunggah (kode ' . $code . '). Cek batas upload_max_filesize / post_max_size di php.ini.');
-    }
-    $f = $_FILES['file'];
-    if ($f['size'] > 5 * 1024 * 1024) { throw new WhException('Ukuran file maksimal 5 MB.'); }
-    $allowed = array('jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png',
-                     'webp' => 'image/webp', 'gif' => 'image/gif', 'pdf' => 'application/pdf');
-    $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
-    if (!isset($allowed[$ext])) { throw new WhException('Tipe file tidak diizinkan. Gunakan JPG, PNG, WEBP, GIF atau PDF.'); }
-    if (function_exists('finfo_open')) {                     // cek isi file, bukan hanya ekstensi
-        $fi = finfo_open(FILEINFO_MIME_TYPE);
-        $mime = finfo_file($fi, $f['tmp_name']);
-        finfo_close($fi);
-        if ($mime !== $allowed[$ext]) { throw new WhException('Isi file tidak sesuai dengan ekstensinya.'); }
-    }
-    $dir = dirname(__DIR__) . '/uploads/delivery';
-    if (!is_dir($dir) && !@mkdir($dir, 0755, true)) {
-        throw new WhException('Folder uploads/delivery tidak bisa dibuat. Buat manual dan beri izin tulis untuk user web server.');
-    }
-    $ht = $dir . '/.htaccess';                               // larang eksekusi script di folder upload
-    if (!file_exists($ht)) {
-        @file_put_contents($ht, "<FilesMatch \"\\.(php|phtml|phar|pl|cgi)$\">\n    Require all denied\n</FilesMatch>\n");
-    }
-    $name = 'dlv_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-    if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) {
-        throw new WhException('Gagal menyimpan file. Cek izin tulis folder uploads/delivery.');
-    }
-    WhJson(array('success' => true, 'url' => '/proyek/uploads/delivery/' . $name, 'name' => $name));
+    $msg = count($done) . ' jurnal issue diposting' . (count($done) ? ': ' . implode(', ', $done) : '.');
+    if (count($skipped)) { $msg .= ' | dilewati (nilai 0): ' . implode(', ', $skipped); }
+    WhOk($msg, array('posted' => $done, 'skipped' => $skipped));
 }

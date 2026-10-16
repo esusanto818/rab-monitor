@@ -20,8 +20,6 @@ $db     = new crud();
 
 switch ($task) {
 
-    // ==============================================================
-    // READ: Data Periode
     case 'read_periods':
         $sql = "SELECT id, period_name, start_date, end_date FROM accounting_periods ORDER BY start_date DESC";
         $stmt = $db->query($sql);
@@ -29,8 +27,6 @@ switch ($task) {
         echo json_encode(['success' => true, 'data' => $data]);
         break;
 
-    // ==============================================================
-    // READ: Laporan Neraca Utama
     case 'read_balance_sheet':
         $periodId = intval($_POST['period_id'] ?? $_REQUEST['period_id'] ?? 0);
         if ($periodId <= 0) {
@@ -47,13 +43,15 @@ switch ($task) {
         }
         $asOfDate = $period['end_date'];
 
-        // Saldo Akun Riil
+        // Saldo Akun Riil (Mencakup asset, bank, cash, liability, equity) s/d as_of_date
         $sql = "
             SELECT c.id, c.account_code, c.account_name, c.account_type,
                    COALESCE(SUM(
-                       CASE WHEN c.account_type = 'asset' THEN l.debit - l.credit
-                            WHEN c.account_type IN ('liability', 'equity') THEN l.credit - l.debit
-                            ELSE 0 END
+                       CASE WHEN j.id IS NOT NULL THEN
+                           CASE WHEN c.account_type IN ('asset', 'bank', 'cash') THEN l.debit - l.credit
+                                WHEN c.account_type IN ('liability', 'equity') THEN l.credit - l.debit
+                                ELSE 0 END
+                       ELSE 0 END
                    ), 0) AS balance
             FROM chart_of_accounts c
             LEFT JOIN journal_lines l ON l.account_id = c.id
@@ -61,7 +59,7 @@ switch ($task) {
                 AND j.status IN ('posted', 'reversed')
                 AND j.journal_date <= :as_of_date
             WHERE c.is_active = true
-              AND c.account_type IN ('asset', 'liability', 'equity')
+              AND c.account_type IN ('asset', 'bank', 'cash', 'liability', 'equity')
             GROUP BY c.id, c.account_code, c.account_name, c.account_type
             ORDER BY c.account_code ASC
         ";
@@ -72,16 +70,18 @@ switch ($task) {
         // Laba/Rugi Berjalan s/d $asOfDate
         $sqlPL = "
             SELECT COALESCE(SUM(
-                       CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
-                            WHEN c.account_type = 'expense' THEN l.debit - l.credit
-                            ELSE 0 END
+                       CASE WHEN j.id IS NOT NULL THEN
+                           CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
+                                WHEN c.account_type = 'expense' THEN l.credit - l.debit   -- [FIX-LABA] beban MENGURANGI laba (sebelumnya debit - credit sehingga beban malah menambah laba)
+                                ELSE 0 END
+                       ELSE 0 END
                    ), 0) AS net_profit
             FROM chart_of_accounts c
-            JOIN journal_lines l ON l.account_id = c.id
-            JOIN journal_entries j ON j.id = l.journal_id
-            WHERE j.status IN ('posted', 'reversed')
-              AND j.journal_date <= :as_of_date
-              AND c.account_type IN ('revenue', 'expense')
+            LEFT JOIN journal_lines l ON l.account_id = c.id
+            LEFT JOIN journal_entries j ON j.id = l.journal_id
+                AND j.status IN ('posted', 'reversed')
+                AND j.journal_date <= :as_of_date
+            WHERE c.account_type IN ('revenue', 'expense')
         ";
         $stmtPL = $db->prepare($sqlPL);
         $stmtPL->execute(['as_of_date' => $asOfDate]);
@@ -104,7 +104,7 @@ switch ($task) {
                 'balance'      => $balance
             ];
 
-            if ($r['account_type'] === 'asset') {
+            if (in_array($r['account_type'], ['asset', 'bank', 'cash'])) {
                 $assets[]   = $item;
                 $totalAsset += $balance;
             } else if ($r['account_type'] === 'liability') {
@@ -143,71 +143,38 @@ switch ($task) {
         ]);
         break;
 
-    // ==============================================================
-    // CREATE: Tambah Akun Neraca Baru (Asset / Liability / Equity)
     case 'create':
-        if ($access < 2) {
-            echo json_encode(['success' => false, 'message' => 'Akses ditolak.']);
-            exit;
-        }
+        if ($access < 2) { echo json_encode(['success' => false, 'message' => 'Akses ditolak.']); exit; }
         $code = trim($_POST['account_code'] ?? '');
         $name = trim($_POST['account_name'] ?? '');
         $type = trim($_POST['account_type'] ?? '');
-
-        if (empty($code) || empty($name) || !in_array($type, ['asset', 'liability', 'equity'])) {
-            echo json_encode(['success' => false, 'message' => 'Kode, Nama, dan Tipe (asset/liability/equity) wajib diisi.']);
-            exit;
+        if (empty($code) || empty($name) || !in_array($type, ['asset', 'bank', 'cash', 'liability', 'equity'])) {
+            echo json_encode(['success' => false, 'message' => 'Data tidak lengkap.']); exit;
         }
-
-        $db->insert('chart_of_accounts', [
-            'account_code' => $code,
-            'account_name' => $name,
-            'account_type' => $type,
-            'is_active'    => true
-        ]);
-        echo json_encode(['success' => true, 'message' => 'Akun Neraca berhasil ditambahkan.']);
+        $db->insert('chart_of_accounts', ['account_code' => $code, 'account_name' => $name, 'account_type' => $type, 'is_active' => true]);
+        echo json_encode(['success' => true, 'message' => 'Akun berhasil ditambahkan.']);
         break;
 
-    // ==============================================================
-    // UPDATE: Update Akun Neraca
     case 'update':
-        if ($access < 3) {
-            echo json_encode(['success' => false, 'message' => 'Akses ditolak.']);
-            exit;
-        }
-        $id   = intval($_POST['id'] ?? 0);
+        if ($access < 3) { echo json_encode(['success' => false, 'message' => 'Akses ditolak.']); exit; }
+        $id = intval($_POST['id'] ?? 0);
         $code = trim($_POST['account_code'] ?? '');
         $name = trim($_POST['account_name'] ?? '');
-
         if ($id <= 0 || empty($code) || empty($name)) {
-            echo json_encode(['success' => false, 'message' => 'ID, Kode, dan Nama Akun tidak valid.']);
-            exit;
+            echo json_encode(['success' => false, 'message' => 'Data tidak valid.']); exit;
         }
-
-        $db->update('chart_of_accounts', [
-            'account_code' => $code,
-            'account_name' => $name
-        ], "id = {$id}");
-        echo json_encode(['success' => true, 'message' => 'Akun Neraca berhasil diperbarui.']);
+        $db->update('chart_of_accounts', ['account_code' => $code, 'account_name' => $name], "id = {$id}");
+        echo json_encode(['success' => true, 'message' => 'Akun berhasil diperbarui.']);
         break;
 
-    // ==============================================================
-    // DELETE: Soft Delete Akun Neraca
     case 'delete':
-        if ($access < 4) {
-            echo json_encode(['success' => false, 'message' => 'Akses ditolak.']);
-            exit;
-        }
+        if ($access < 4) { echo json_encode(['success' => false, 'message' => 'Akses ditolak.']); exit; }
         $id = intval($_POST['id'] ?? 0);
-        if ($id <= 0) {
-            echo json_encode(['success' => false, 'message' => 'ID Akun tidak valid.']);
-            exit;
-        }
-
+        if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID tidak valid.']); exit; }
         $db->update('chart_of_accounts', ['is_active' => false], "id = {$id}");
-        echo json_encode(['success' => true, 'message' => 'Akun Neraca berhasil dinonaktifkan.']);
+        echo json_encode(['success' => true, 'message' => 'Akun dinonaktifkan.']);
         break;
 
     default:
-        echo json_encode(['success' => false, 'message' => 'Task tidak dikenali: ' . htmlspecialchars($task)]);
+        echo json_encode(['success' => false, 'message' => 'Task tidak dikenali.']);
 }
