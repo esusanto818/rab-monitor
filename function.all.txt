@@ -1,0 +1,91 @@
+395:function AutoPostJournal($db, $params) {
+396-    $ruleCode      = $params['rule_code'] ?? '';
+397-    $referenceType = $params['reference_type'] ?? '';
+398-    $referenceId   = intval($params['reference_id'] ?? 0);
+399-    $journalDate   = $params['journal_date'] ?? date('Y-m-d');
+400-    $amount        = Str2N($params['amount'] ?? 0);
+401-    $description   = $params['description'] ?? '';
+402-
+403-    // Override opsional -- kalau diisi, dipakai menggantikan akun dari rule.
+404-    $debitAccountIdOverride  = intval($params['debit_account_id']  ?? 0);
+405-    $creditAccountIdOverride = intval($params['credit_account_id'] ?? 0);
+406-
+407-    if (empty($ruleCode) || empty($referenceType) || $amount <= 0) {
+408-        return ['success' => false, 'message' => 'Parameter AutoPostJournal tidak lengkap (rule_code/reference_type/amount).', 'journal_id' => null];
+409-    }
+410-
+411-    // 1. Cari rule di fiscal_config (tetap wajib ada & aktif, sebagai kontrol
+412-    //    posting resmi -- walau akunnya nanti bisa di-override per transaksi)
+413-    $stmtRule = $db->prepare("SELECT debit_account_id, credit_account_id, rule_name FROM fiscal_config WHERE rule_code = :code AND is_active = true");
+414-    $stmtRule->execute(['code' => $ruleCode]);
+415-    $rule = $stmtRule->fetch(PDO::FETCH_ASSOC);
+416-    if (!$rule) {
+417-        return ['success' => false, 'message' => "Rule posting '{$ruleCode}' tidak ditemukan atau tidak aktif di fiscal_config.", 'journal_id' => null];
+418-    }
+419-
+420-    $debitAccountId  = $debitAccountIdOverride  > 0 ? $debitAccountIdOverride  : intval($rule['debit_account_id']);
+421-    $creditAccountId = $creditAccountIdOverride > 0 ? $creditAccountIdOverride : intval($rule['credit_account_id']);
+422-
+423-    if ($debitAccountId <= 0 || $creditAccountId <= 0) {
+424-        return ['success' => false, 'message' => "Akun debit/kredit untuk rule '{$ruleCode}' tidak valid (cek fiscal_config atau override yang dikirim).", 'journal_id' => null];
+425-    }
+426-
+427-    // 2. Cari periode akuntansi berdasarkan tanggal transaksi
+428-    $stmtPeriod = $db->prepare("
+429-        SELECT id, is_closed FROM accounting_periods
+430-        WHERE :jdate BETWEEN start_date AND end_date
+431-        LIMIT 1
+432-    ");
+433-    $stmtPeriod->execute(['jdate' => $journalDate]);
+434-    $period = $stmtPeriod->fetch(PDO::FETCH_ASSOC);
+435-    if (!$period) {
+436-        return ['success' => false, 'message' => "Tidak ada periode akuntansi yang mencakup tanggal {$journalDate}. Buat periode-nya dulu di menu Fiscal Period.", 'journal_id' => null];
+437-    }
+438-    if ($period['is_closed']) {
+439-        return ['success' => false, 'message' => "Periode akuntansi untuk tanggal {$journalDate} sudah ditutup. Jurnal otomatis tidak bisa dibuat.", 'journal_id' => null];
+440-    }
+441-
+442-    // 3. Buat header jurnal -- langsung status 'posted' (bukan draft), karena
+443-    //    ini auto-generate dari transaksi yang sudah tervalidasi di modul asal.
+444-    $refNo = CreateRefNo('journal_entries', 'ref_no', 'JV'); // JV = Journal Voucher (auto)
+445-
+446-    try {
+447-        DbOrFail($db, $db->insert('journal_entries', [
+448-            'ref_no'         => $refNo,
+449-            'journal_date'   => $journalDate,
+450-            'period_id'      => $period['id'],
+451-            'reference_type' => $referenceType,
+452-            'reference_id'   => $referenceId,
+453-            'description'    => $description ?: $rule['rule_name'],
+454-            'status'         => 'posted',
+455-            'posted_by'      => $_SESSION['user_id'] ?? null,
+456-            'posted_at'      => date('Y-m-d H:i:s')
+457-        ]), 'insert journal_entries');
+458-
+459-        $stmtNewId = $db->prepare("SELECT id FROM journal_entries WHERE ref_no = :no");
+460-        $stmtNewId->execute(['no' => $refNo]);
+461-        $journalId = $stmtNewId->fetch(PDO::FETCH_ASSOC)['id'] ?? null;
+462-
+463-        if (!$journalId) {
+464-            return ['success' => false, 'message' => 'Gagal membuat header jurnal.', 'journal_id' => null];
+465-        }
+466-
+467-        // 4. Insert 2 baris (debit & kredit) -- pakai akun hasil override jika ada
+468-        DbOrFail($db, $db->insert('journal_lines', [
+469-            'journal_id'  => $journalId,
+470-            'account_id'  => $debitAccountId,
+471-            'debit'       => $amount,
+472-            'credit'      => 0,
+473-            'description' => $description
+474-        ]), 'insert journal_lines (debit)');
+475-
+476-        DbOrFail($db, $db->insert('journal_lines', [
+477-            'journal_id'  => $journalId,
+478-            'account_id'  => $creditAccountId,
+479-            'debit'       => 0,
+480-            'credit'      => $amount,
+481-            'description' => $description
+482-        ]), 'insert journal_lines (credit)');
+483-
+484-    } catch (Exception $e) {
+485-        // Pesan asli dari Postgres (mis. constraint reference_type/status,

@@ -1,0 +1,25 @@
+{
+  "name": "Monitoring Material & Budget RAB",  
+  "short_name": "Progress",
+  "start_url": "./views/project.progress.m.php",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#03615e",
+  "icons": [
+    {
+      "src": "./assets/logo192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/logo512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+ 
+}

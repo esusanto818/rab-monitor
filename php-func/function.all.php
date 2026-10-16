@@ -441,7 +441,10 @@ function AutoPostJournal($db, $params) {
 
     // 3. Buat header jurnal -- langsung status 'posted' (bukan draft), karena
     //    ini auto-generate dari transaksi yang sudah tervalidasi di modul asal.
-    $refNo = CreateRefNo('journal_entries', 'ref_no', 'JV'); // JV = Journal Voucher (auto)
+    // [FIX-REFNO] CreateRefNo() memakai koneksi pg terpisah ($conn) sehingga TIDAK melihat jurnal yang baru di-insert
+    //             lewat PDO ($db) dan belum di-commit -> posting >1 jurnal dalam satu transaksi menghasilkan ref_no kembar
+    //             (unique violation journal_entries_journal_no_key). Nomor jurnal sekarang dibuat lewat $db (koneksi/transaksi yang sama).
+    $refNo = JournalNextRefNo($db); // JV = Journal Voucher (auto)
 
     try {
         DbOrFail($db, $db->insert('journal_entries', [
@@ -528,6 +531,22 @@ function ReverseJournalByReference($db, $referenceType, $referenceId) {
     }
 
     return count($journalIds);
+}
+
+/*
+  Fungsi   : JournalNextRefNo()   [FIX-REFNO][NEW]
+  Tujuan   : Nomor jurnal berikutnya format JV-YYMM-NNNNN (sama dengan CreateRefNo) tetapi dibaca lewat PDO $db,
+             jadi ikut melihat baris yang belum di-commit pada transaksi yang sama.
+             Advisory lock transaksi mencegah dua proses mengambil nomor yang sama bersamaan.
+*/
+function JournalNextRefNo($db) {
+    $prefix = 'JV-' . date('ym') . '-';
+    $db->query("SELECT pg_advisory_xact_lock(7001)");   // lock dilepas otomatis saat COMMIT/ROLLBACK
+    $st = $db->prepare("SELECT COALESCE(MAX(CAST(RIGHT(ref_no, 5) AS int)), 0) + 1
+                          FROM journal_entries
+                         WHERE ref_no ~ :pat");
+    $st->execute(['pat' => '^' . $prefix . '[0-9]{5}$']);
+    return $prefix . str_pad((string)intval($st->fetchColumn()), 5, '0', STR_PAD_LEFT);
 }
 
 /*

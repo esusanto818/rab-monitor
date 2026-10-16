@@ -3,9 +3,13 @@
   Description   : Retur Pembelian / Retur Supplier untuk material cacat / rusak. ExtJS 3.4.1
                   Mengikuti pola po.js: grid utama (#divMainGrid) + panel detail di bawah grid dengan
                   tombol aksi status, editor memakai #editorWdw bawaan template.
-                  Alur: Diajukan -> (Kirim lewat issue W/H) Dikirim -> (Selesaikan) Diganti | Kredit
+                  Alur: Diajukan -> (Perintahkan W/H) Diperintahkan -> (gudang: Siap Kirim) Disiapkan
+                        -> (gudang: Konfirmasi Dikirim) Dikirim -> (Selesaikan) Diganti | Kredit
+                  [CHANGED 2026-10-11] Pembelian hanya memerintahkan issue; yang menyatakan barang SUDAH DIKIRIM adalah gudang
+                  (Warehouse Issuing). Stok keluar + jurnal baru dibuat saat gudang konfirmasi dikirim.
                   Tombol template: Add = retur baru | Edit = ubah retur Diajukan | Delete = Batalkan retur Diajukan
-                  Tombol panel detail: Kirim / Batalkan (Diajukan), Batal Kirim / Selesaikan (Dikirim)
+                  Tombol panel detail: Perintahkan W/H / Batalkan (Diajukan), Batalkan Perintah (Diperintahkan/Disiapkan),
+                                       Cetak SJ / Batal Kirim / Selesaikan (Dikirim)
   Entry retur    : pilih dokumen W/H RCV -> proyek, gudang, supplier, PO terisi otomatis; item = item RCV (isi qty + jenis cacat)
   Backend       : ../php-crud/purchase.returnCRD.php
   [CHANGED]     : seluruh file ditulis ulang -- sebelumnya membuat grid/toolbar/window sendiri ke body,
@@ -110,6 +114,8 @@ Ext.onReady(function () {
     function statusColor(v) {
         switch (v) {
             case 'Diajukan': return '#e6a817 !important';
+            case 'Diperintahkan': return '#b48ef0 !important';      // [NEW]
+            case 'Disiapkan': return '#4fa3ff !important';          // [NEW]
             case 'Dikirim': return '#2bc1e2 !important';
             case 'Diganti': return '#00ff4c !important';
             case 'Kredit': return '#00ff4c !important';
@@ -301,11 +307,48 @@ Ext.onReady(function () {
         setTimeout(function () { w.print(); }, 300);
     }
 
+    // [NEW] bukti pengiriman = satu atau lebih URL (satu per baris). Hanya http(s)/path lokal yang dijadikan link.
+    function proofLinks(v) {
+        if (!v) { return ''; }
+        var out = [], parts = String(v).split(/\r?\n/);
+        for (var i = 0; i < parts.length; i++) {
+            var u = parts[i].replace(/^\s+|\s+$/g, '');
+            if (!u) { continue; }
+            if (!/^(https?:\/\/|\/)/i.test(u)) { out.push(enc(u)); continue; }
+            var label = /\.(jpe?g|png|gif|webp)(\?.*)?$/i.test(u) ? 'Foto' : (/\.pdf(\?.*)?$/i.test(u) ? 'PDF' : 'Link');
+            out.push('<a href="' + enc(u) + '" target="_blank" style="color:#7fe0a0;">' + label + ' ' + (out.length + 1) + '</a>');
+        }
+        return out.join(' &nbsp;|&nbsp; ');
+    }
+
+    // [NEW] Banner status pengiriman dari W/H di panel detail retur (read-only; aksi gudang ada di Warehouse Issuing)
+    function dispatchBanner(h) {
+        function box(bg, border, fg, inner) {
+            return '<div style="margin:0 2px 8px 2px; padding:8px 12px; background:' + bg + '; border-left:4px solid ' + border + '; color:' + fg + ';">' + inner + '</div>';
+        }
+        if (h.status === 'Diperintahkan') {
+            return box('#4a3a0b', '#e6a817', '#ffe9a8', '<b>Perintah issue W/H sudah dibuat</b> (' + enc(h.issue_ref_no || '-') +
+                ') &mdash; menunggu gudang menyiapkan barang. Stok belum keluar.');
+        }
+        if (h.status === 'Disiapkan') {
+            return box('#0b3550', '#2bc1e2', '#cdeefa', '<b>Barang sudah disiapkan gudang</b> (' + enc(h.issue_ref_no || '-') +
+                ', ' + enc(h.prepared_at || '-') + ') &mdash; menunggu konfirmasi pengiriman. Stok belum keluar.');
+        }
+        if (h.issue_ref_no && (h.status === 'Dikirim' || h.status === 'Diganti' || h.status === 'Kredit')) {
+            return box('#0f3d2a', '#2e9e4f', '#c9f2d9', '<b style="color:#4be08a;">&#10004; Barang sudah dikirim dari W/H</b> &nbsp;|&nbsp; Issue W/H: <b>' + enc(h.issue_ref_no) + '</b>' +
+                ' &nbsp;|&nbsp; Tgl kirim: <b>' + enc(h.sent_date || '-') + '</b> &nbsp;|&nbsp; Kurir / Kendaraan: <b>' + enc(h.carrier || '-') + '</b>' +
+                ' &nbsp;|&nbsp; Penerima: <b>' + enc(h.delivery_receiver || '-') + '</b> &nbsp;|&nbsp; No. Surat Jalan: <b>' + enc(h.delivery_note_no || '-') + '</b>' +
+                (h.delivery_proof ? '<br>Bukti pengiriman: ' + proofLinks(h.delivery_proof) : ''));      // [NEW] foto / PDF dari gudang
+        }
+        return '';
+    }
+
     function renderDetailPanel(h, items) {
         var grand = 0;
         // [FIX-UI] tombol aksi sesuai status dipindah ke baris judul (sebelumnya di dasar panel -> tidak terlihat)
         var actions = [];
-        if (h.status === 'Diajukan') { actions = [['send', 'Kirim (Issue W/H)', '#03615e'], ['cancel', 'Batalkan Retur', '#8e2b22']]; }
+        if (h.status === 'Diajukan') { actions = [['order', 'Perintahkan W/H (Issue)', '#03615e'], ['cancel', 'Batalkan Retur', '#8e2b22']]; }      // [CHANGED] send -> order
+        else if (h.status === 'Diperintahkan' || h.status === 'Disiapkan') { actions = [['cancel_order', 'Batalkan Perintah W/H', '#8e2b22']]; }      // [NEW]
         else if (h.status === 'Dikirim') { actions = [['print', 'Cetak Surat Jalan', '#2e6da4'], ['unsend', 'Batal Kirim', '#555555'], ['resolve', 'Selesaikan', '#03615e']]; }
         else if (h.issue_ref_no) { actions = [['print', 'Cetak Surat Jalan', '#2e6da4']]; }      // [NEW] Diganti / Kredit: surat jalan tetap bisa dicetak ulang
         var actHtml = '';
@@ -328,6 +371,7 @@ Ext.onReady(function () {
                        (h.credit_note_no ? ' (NK ' + enc(h.credit_note_no) + ', ' + fmtAmt(h.credit_amount) + ')' : '') +
                        (h.resolution_note ? ' - ' + enc(h.resolution_note) : '') : '') +
                    (h.remark ? ' &nbsp;|&nbsp; Catatan: ' + enc(h.remark) : '') + '</div>' +
+                   dispatchBanner(h) +      // [CHANGED] info status pengiriman dari W/H (gudang yang konfirmasi)
                    '<table class="detail-table" width="100%" cellSpacing="0" cellPadding="0">' +
                    '<thead><tr class="header-row">' +
                    '<th align="left">Material</th><th align="right">Qty Retur</th><th align="right">Biaya Satuan (FIFO)</th>' +
@@ -367,11 +411,15 @@ Ext.onReady(function () {
 
     function runAction(rec, act) {
         if (!needAccess(ACCESS_EDIT, 'Anda tidak memiliki hak akses untuk mengubah status retur.')) return;
-        if (act === 'send') { openSend(rec); }
+        if (act === 'order') { openOrder(rec); }      // [CHANGED] send -> order
         else if (act === 'resolve') { openResolve(rec); }
         else if (act === 'cancel') {
             Ext.Msg.confirm('Batalkan Retur', 'Batalkan retur <b>' + enc(rec.ref_no) + '</b>?', function (b) {
                 if (b === 'yes') doAction({ action: 'cancel', id: rec.id });
+            });
+        } else if (act === 'cancel_order') {      // [NEW]
+            Ext.Msg.confirm('Batalkan Perintah W/H', 'Batalkan perintah issue W/H untuk <b>' + enc(rec.ref_no) + '</b>? Retur kembali berstatus Diajukan.', function (b) {
+                if (b === 'yes') doAction({ action: 'cancel_order', id: rec.id });
             });
         } else if (act === 'unsend') {
             Ext.Msg.confirm('Batal Kirim', 'Batalkan pengiriman <b>' + enc(rec.ref_no) + '</b>? Issue W/H di-reverse dan stok kembali ke gudang.', function (b) {
@@ -380,23 +428,22 @@ Ext.onReady(function () {
         }
     }
 
-    // ---- Kirim (issue W/H) ----
-    function openSend(rec) {
-        var wDate = new Ext.form.DateField({ fieldLabel: 'Tanggal Kirim', format: 'd/m/Y', value: new Date(), allowBlank: false, width: 120 });
-        var wCarrier = new Ext.form.TextField({ fieldLabel: 'Kurir / Penerima', anchor: '95%' });
+    // ---- [CHANGED] Perintahkan W/H: buat dokumen issue (pending). Stok belum keluar; gudang yang konfirmasi dikirim ----
+    function openOrder(rec) {
+        var wDate = new Ext.form.DateField({ fieldLabel: 'Tanggal Perintah', format: 'd/m/Y', value: new Date(), allowBlank: false, width: 120 });
         var win = new Ext.Window({
-            title: 'Kirim Retur ' + rec.ref_no + ' (Issue W/H)', width: 440, height: 190, modal: true, layout: 'fit', cls: 'rtDarkWin',      // [FIX-UI] cls
+            title: 'Perintahkan W/H untuk Retur ' + rec.ref_no, width: 460, height: 190, modal: true, layout: 'fit', cls: 'rtDarkWin',      // [FIX-UI] cls
             items: new Ext.form.FormPanel({
-                border: false, labelWidth: 110, bodyStyle: 'padding:12px;',
+                border: false, labelWidth: 120, bodyStyle: 'padding:12px;',
                 items: [{ xtype: 'displayfield', hideLabel: true,
-                          value: 'Stok akan keluar dari gudang lewat dokumen issue W/H (FIFO). Qty tidak mengurangi kuota RAB.' },
-                        wDate, wCarrier]
+                          value: 'Dokumen issue W/H dibuat berstatus pending. Stok BELUM keluar sampai gudang menyiapkan barang dan mengonfirmasi pengiriman di Warehouse Issuing.' },
+                        wDate]
             }),
             buttons: [
-                { text: 'Kirim', handler: function () {
-                    if (!wDate.getValue()) { showErr('Tanggal kirim wajib diisi.'); return; }
+                { text: 'Perintahkan', handler: function () {
+                    if (!wDate.getValue()) { showErr('Tanggal perintah wajib diisi.'); return; }
                     // [FIX-CLOSE] ambil nilai field SEBELUM window ditutup (win.close() menghancurkan field -> getValue() error, request tidak terkirim)
-                    var params = { action: 'send', id: rec.id, sent_date: ymd(wDate.getValue()), carrier: wCarrier.getValue() };
+                    var params = { action: 'order', id: rec.id, order_date: ymd(wDate.getValue()) };
                     win.close();
                     doAction(params);
                 } },
@@ -462,7 +509,7 @@ Ext.onReady(function () {
         root: 'data', totalProperty: 'totalCount', idProperty: 'id',
         fields: ['id', 'ref_no', 'return_date', 'project_id', 'project_name', 'warehouse_id', 'warehouse_name',
                  'supplier_id', 'supplier_name', 'po_id', 'po_number', 'supplier_do_no', 'status', 'remark',
-                 'wh_receiving_hdr_id', 'rcv_ref_no', 'material_out_id', 'issue_ref_no', 'sent_date', 'carrier',
+                 'wh_receiving_hdr_id', 'rcv_ref_no', 'material_out_id', 'issue_ref_no', 'sent_date', 'carrier', 'issue_status', 'prepared_at', 'delivery_note_no', 'delivery_receiver', 'delivery_proof',
                  'resolution_type', 'resolution_date', 'credit_note_no', { name: 'credit_amount', type: 'float' }, 'resolution_note',
                  { name: 'line_count', type: 'int' }, { name: 'total_qty', type: 'float' }, { name: 'total_amount', type: 'float' }],
         listeners: { exception: storeError }

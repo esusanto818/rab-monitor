@@ -11,6 +11,8 @@
                     normal-debit (asset/expense), sebaliknya di kolom Kredit.
                     Kalau saldo "terbalik" (kontra), tetap ditampilkan di
                     kolom lawan supaya total tetap balance secara matematis.
+                  - [FIX-BANKCASH] Akun bank & cash diperlakukan debit-normal
+                    (konsisten dengan Neraca).
 */
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 
@@ -56,7 +58,7 @@ switch ($task) {
         $sql = "
             SELECT c.id, c.account_code, c.account_name, c.account_type,
                    COALESCE(SUM(
-                       CASE WHEN c.account_type IN ('asset','expense') THEN l.debit - l.credit
+                       CASE WHEN c.account_type IN ('asset','bank','cash','expense') THEN l.debit - l.credit
                             ELSE l.credit - l.debit END
                    ), 0) AS balance
             FROM chart_of_accounts c
@@ -76,7 +78,7 @@ switch ($task) {
         $totalDebit = 0;
         $totalCredit = 0;
         foreach ($rows as $r) {
-            $isDebitNormal = in_array($r['account_type'], ['asset', 'expense']);
+            $isDebitNormal = in_array($r['account_type'], ['asset', 'bank', 'cash', 'expense']);   // [FIX-BANKCASH] bank & cash = debit-normal
             $balance = floatval($r['balance']);
 
             $debitCol = 0;

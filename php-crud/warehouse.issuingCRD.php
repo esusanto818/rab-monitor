@@ -2,20 +2,23 @@
 /**
  * warehouse.issuingCRD.php — Warehouse Issuing (material out ke proyek)
  *
- * Aturan issue per material:
- *   1. Material harus sudah di-RCV di gudang (stok W/H > 0).
+ * Aturan issue per material (NEW):
+ *   1. Material harus sudah di-RCV di gudang proyek (stok W/H > 0).
  *   2. qty issue <= stok di W/H.
  *   3. Total issue proyek (posted) + qty ini <= RAB qty_plan x (1 + 5%).
  *      Bila melewati qty RAB tapi masih dalam +5% -> is_overbudget = true (allowance terpakai).
  *   Nilai issue = FIFO dari layer RCV (stock_movements IN).
  *
- * [CHANGED] Gudang utama dipakai bersama (sama seperti modul Retur Pembelian):
- *           - lookup_warehouses : semua gudang aktif yang MASIH ADA material (stok > 0),
- *             tidak lagi dibatasi warehouses.project_id.
- *           - save              : validasi "gudang terdaftar untuk proyek" dinonaktifkan.
- *           Kuota RAB +5% tetap dihitung per proyek.
+ * [JURNAL][NEW] Issue ke proyek (issue_type = 'PROJECT') memposting jurnal otomatis lewat AutoPostJournal
+ *   rule fiscal_config 'ISSUE_PROJECT' (default Dr WIP / Cr Persediaan Bahan Baku), reference_type = 'material_out',
+ *   nilai = total FIFO (SUM qty_out x unit_cost). Gagal posting = issue dibatalkan (rollback).
+ *   Reverse issue menghapus jurnalnya (ReverseJournalByReference).
+ *   Issue Retur Supplier (issue_type = 'SUPPLIER_RETURN') TIDAK dijurnal di sini (diurus modul Retur Supplier).
+ *   Catatan: modul ini memakai koneksi pg_* ($conn), AutoPostJournal memakai PDO (class crud) = koneksi terpisah.
+ *   Jurnal diposting tepat sebelum COMMIT dokumen; bila jurnal gagal, dokumen di-ROLLBACK.
  *
- * Action: list | detail | lookup_projects | lookup_warehouses | lookup_materials | save | reverse
+ * Action: list | detail | lookup_projects | lookup_warehouses | lookup_materials | save | reverse |
+ *         backfill_issue_journal ([JURNAL][NEW] sekali jalan: jurnal untuk issue lama yang belum berjurnal)
  */
 ob_start();
 ini_set('display_errors', '0');
@@ -23,8 +26,12 @@ require_once '../php-func/function.all.php';
 require_once '../php-class/crudClass.php';
 require_once '../php-func/function.stock.php';
 
+if (session_status() === PHP_SESSION_NONE) { session_start(); }   // [JURNAL] AutoPostJournal membaca $_SESSION['user_id']
+
 define('ISSUE_ALLOWANCE_PCT', 5.0);          // allowance di atas qty RAB (%)
 define('ISSUE_REF_TYPE', 'MATERIAL_OUT');    // reference_type di stock_movements
+define('ISSUE_JOURNAL_REF', 'material_out'); // [JURNAL][NEW] nilai enum journal_entries.reference_type
+define('ISSUE_JOURNAL_RULE', 'ISSUE_PROJECT'); // [JURNAL][NEW] rule_code di fiscal_config
 
 $action = WhReq('action', 'list');
 
@@ -37,6 +44,7 @@ try {
         case 'lookup_materials':  IssLookupMaterials(); break;
         case 'save':              IssSave(); break;
         case 'reverse':           IssReverse(); break;
+        case 'backfill_issue_journal': IssBackfillJournal(); break;   // [JURNAL][NEW]
         default: throw new WhException('Action tidak dikenali.');
     }
 } catch (WhException $e) {
@@ -49,6 +57,30 @@ try {
 }
 
 /* ------------------------------------------------------------------ */
+// [JURNAL][NEW] Koneksi PDO (class crud) untuk AutoPostJournal / ReverseJournalByReference
+function IssJournalDb() {
+    static $d = null;
+    if ($d === null) { $d = new crud(); }
+    return $d;
+}
+
+// [JURNAL][NEW] Posting jurnal issue proyek. Nilai <= 0 (mis. unit_cost belum terisi) -> tidak dijurnal.
+function IssPostJournal($hdrId, $refNo, $projectId, $date, $total) {
+    $total = round((float)$total, 2);
+    if ($total <= 0.004) { return false; }
+    $p = WhRow('SELECT name FROM projects WHERE id=$1', array((int)$projectId));
+    $jr = AutoPostJournal(IssJournalDb(), array(
+        'rule_code'      => ISSUE_JOURNAL_RULE,
+        'reference_type' => ISSUE_JOURNAL_REF,
+        'reference_id'   => (int)$hdrId,
+        'journal_date'   => $date,
+        'amount'         => $total,
+        'description'    => 'Issue material ' . $refNo . ' - ' . ($p ? $p['name'] : ('proyek #' . $projectId)),
+    ));
+    if (!$jr['success']) { throw new WhException('Gagal posting jurnal issue: ' . $jr['message']); }
+    return true;
+}
+
 // Info RAB & akumulasi issue proyek untuk satu material
 function IssRabInfo($projectId, $materialId) {
     $rab = WhRow("SELECT COALESCE(SUM(qty_plan),0) AS q FROM budget_items
@@ -56,7 +88,7 @@ function IssRabInfo($projectId, $materialId) {
     $iss = WhRow("SELECT COALESCE(SUM(i.qty_out),0) AS q
                   FROM material_out_items i JOIN material_out_header h ON h.id=i.material_out_id
                   WHERE h.project_id=$1 AND i.material_id=$2 AND h.status='posted'
-                    AND h.issue_type='PROJECT'", // issue retur supplier tidak memakan kuota RAB
+                    AND h.issue_type='PROJECT'", // [CHANGED] issue retur supplier tidak memakan kuota RAB
                  array((int)$projectId, (int)$materialId));
     return array('rab_qty' => round((float)$rab['q'], 4), 'issued' => round((float)$iss['q'], 4));
 }
@@ -115,22 +147,11 @@ function IssLookupProjects() {
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
 }
 
-// [CHANGED] Hanya gudang yang MASIH ADA material (stok > 0); tidak lagi dibatasi warehouses.project_id
-//           (gudang utama dipakai bersama, sama seperti modul Retur Pembelian).
-//           Gudang milik proyek terpilih diurutkan paling atas; nama diberi jumlah material berstok.
+// Hanya gudang milik proyek tsb (material proyek = stok di gudang proyek)
 function IssLookupWarehouses() {
     $pid = (int)WhReq('project_id');
-    $rows = WhRows("SELECT w.id, w.code,
-                           (w.name || ' (' || oh.item_count || ' material)') AS name
-                    FROM warehouses w
-                    JOIN (SELECT warehouse_id, COUNT(*) AS item_count
-                          FROM (SELECT warehouse_id, item_id
-                                FROM stock_movements
-                                GROUP BY warehouse_id, item_id
-                                HAVING SUM(CASE WHEN movement_type='IN' THEN qty ELSE -qty END) > 0) x
-                          GROUP BY warehouse_id) oh ON oh.warehouse_id = w.id
-                    WHERE w.active = true
-                    ORDER BY (w.project_id = $1) DESC NULLS LAST, w.name", array($pid));
+    $rows = WhRows("SELECT id, code, name FROM warehouses
+                    WHERE active=true AND project_id=$1 ORDER BY name", array($pid));
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
 }
 
@@ -183,8 +204,7 @@ function IssSave() {
 
     $wh = WhRow('SELECT id, project_id, active FROM warehouses WHERE id=$1', array($whId));
     if (!$wh || !WhBool($wh['active'])) { throw new WhException('Gudang tidak ditemukan / tidak aktif.'); }
-    // [CHANGED] gudang utama dipakai bersama -> validasi kepemilikan proyek dinonaktifkan
-    // if ((int)$wh['project_id'] !== $projectId) { throw new WhException('Gudang tidak terdaftar untuk proyek ini.'); }
+    if ((int)$wh['project_id'] !== $projectId) { throw new WhException('Gudang tidak terdaftar untuk proyek ini.'); }
 
     // Validasi & gabung baris duplikat per material
     $lines = array();
@@ -243,6 +263,11 @@ function IssSave() {
                            ISSUE_REF_TYPE, $hdrId, $refNo, 'Issue ke proyek', $userId);
         }
     }
+
+    // [JURNAL][NEW] posting jurnal issue (Dr WIP / Cr Persediaan, rule ISSUE_PROJECT) sebelum COMMIT; gagal -> ROLLBACK dokumen
+    $tot = WhRow('SELECT COALESCE(SUM(qty_out*unit_cost),0) AS t FROM material_out_items WHERE material_out_id=$1', array($hdrId));
+    IssPostJournal($hdrId, $refNo, $projectId, $date, $tot['t']);
+
     WhQ('COMMIT');
     WhOk('Issuing berhasil diposting. No: ' . $refNo, array('id' => $hdrId, 'ref_no' => $refNo));
 }
@@ -255,11 +280,37 @@ function IssReverse() {
     $h = WhRow('SELECT id, status, issue_type FROM material_out_header WHERE id=$1 FOR UPDATE', array($id));
     if (!$h) { throw new WhException('Dokumen tidak ditemukan.'); }
     if ($h['status'] !== 'posted') { throw new WhException('Hanya dokumen berstatus posted yang dapat di-reverse.'); }
-    // issue retur supplier harus dibatalkan lewat Retur Supplier (Batal Kirim) agar status klaim ikut konsisten
+    // [CHANGED] issue retur supplier harus dibatalkan lewat Retur Supplier (Batal Kirim) agar status klaim ikut konsisten
     if ($h['issue_type'] !== 'PROJECT') { throw new WhException('Dokumen ini adalah issue Retur Supplier. Gunakan Batal Kirim di modul Retur Supplier.'); }
     WhQ("UPDATE material_out_header SET status='reversed', reversed_at=now(), reversed_by=$2 WHERE id=$1",
         array($id, WhUserId()));
     WhDeleteMovementsByRef(ISSUE_REF_TYPE, $id);   // stok kembali; kuota RAB ikut pulih (status bukan posted)
+    ReverseJournalByReference(IssJournalDb(), ISSUE_JOURNAL_REF, $id);   // [JURNAL][NEW] hapus jurnal issue (issue lama tanpa jurnal -> 0 baris, aman)
     WhQ('COMMIT');
     WhOk('Dokumen issuing berhasil di-reverse.');
+}
+
+// [JURNAL][NEW] Backfill sekali jalan: jurnal untuk issue proyek posted yang belum berjurnal. Idempotent.
+// Tiap issue diposting terpisah (koneksi PDO autocommit); bila satu gagal, proses berhenti & pesan menyebut nomor issue-nya,
+// yang sudah terposting tetap tersimpan dan dilewati pada pemanggilan berikutnya.
+function IssBackfillJournal() {
+    if (intval(isset($_SESSION['FormAccess']) ? $_SESSION['FormAccess'] : 0) < 3) { throw new WhException('Akses ditolak.'); }
+    $rows = WhRows("SELECT h.id, h.ref_no, h.project_id, h.issue_date,
+                           COALESCE((SELECT SUM(i.qty_out*i.unit_cost) FROM material_out_items i WHERE i.material_out_id=h.id),0) AS total
+                    FROM material_out_header h
+                    WHERE h.status='posted' AND h.issue_type='PROJECT'
+                      AND NOT EXISTS (SELECT 1 FROM journal_entries je
+                                       WHERE je.reference_type::text=$1 AND je.reference_id=h.id)
+                    ORDER BY h.issue_date ASC, h.id ASC", array(ISSUE_JOURNAL_REF));
+    $done = array(); $skipped = array();
+    foreach ($rows as $r) {
+        if (IssPostJournal((int)$r['id'], $r['ref_no'], (int)$r['project_id'], $r['issue_date'], $r['total'])) {
+            $done[] = $r['ref_no'];
+        } else {
+            $skipped[] = $r['ref_no'];     // nilai 0 -> tidak dijurnal
+        }
+    }
+    $msg = count($done) . ' jurnal issue diposting' . (count($done) ? ': ' . implode(', ', $done) : '.');
+    if (count($skipped)) { $msg .= ' | dilewati (nilai 0): ' . implode(', ', $skipped); }
+    WhOk($msg, array('posted' => $done, 'skipped' => $skipped));
 }

@@ -1,4 +1,7 @@
 <?php
+// Izinkan ngrok melewati halaman peringatan secara otomatis
+header('ngrok-skip-browser-warning: 1');
+
 define('BASE_PATH', '/var/www/html/proyek');
 if (session_status() == PHP_SESSION_NONE) {
     session_start();

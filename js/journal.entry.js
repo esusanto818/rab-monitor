@@ -1,5 +1,5 @@
 /*
-  Document      : m.journal.js
+  Document      : journal.entry.js
   Description   : Journal Entry (manual) - Header Grid + Detail View + Editor Form
   Backend       : /proyek/php-crud/journal.entryCRD.php
 */
@@ -478,7 +478,10 @@ Ext.onReady(function () {
     }
 
     document.getElementById('printData').onclick = function (event) {
-        window.open("../pdf/journal.php", 'sub', 'toolbar=no', 'location=no', 'status=no', 'directories=no', 'menubar=no');
+        // [PRINT-JV] Jurnal terpilih di grid -> cetak satu jurnal (?id=); belum ada yang dipilih -> cetak semua jurnal.
+        //            Argumen fitur window.open dijadikan satu string (sebelumnya terpisah & diabaikan).
+        var url = '../pdf/journal.php' + (dataRecord && dataRecord.id ? '?id=' + encodeURIComponent(dataRecord.id) : '');
+        window.open(url, '_blank', 'width=900,height=800,scrollbars=yes,resizable=yes');
     };
 
     document.getElementById('saveEdit').onclick = function () {

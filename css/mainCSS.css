@@ -544,7 +544,7 @@ img.header-icon-grid {
   height              : 17px !important;
   width               : 17px !important;
   top                 : 2px !important;
-  right               : 5px !important;
+  right               : 0px !important;
 }
 
 .x-form-field-wrap .x-form-date-trigger:active {

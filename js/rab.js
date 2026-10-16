@@ -4,16 +4,27 @@
                    Multi currency: satu mata uang anggaran per proyek (mis. USD untuk proyek berdana luar negeri)
                    + kurs ke mata uang dasar. Harga satuan RAB dalam mata uang anggaran; PO boleh IDR atau USD
                    dan dibandingkan terhadap RAB setelah dikonversi.
+  [NEW 2026-10-12] PLAFON = Nilai Kontrak (projects.contract_value). Layar RAB menampilkan Nilai Kontrak, Budget, Cadangan (kontrak - budget),
+                   total RAB, cadangan terpakai & sisa. Aturan (divalidasi ulang server di rabCRD.php):
+                   - total RAB tidak boleh melebihi Nilai Kontrak;
+                   - proyek 'Belum Mulai': total RAB <= Budget;
+                   - proyek berjalan: boleh melewati Budget -> memakai cadangan; baris baru / dinaikkan wajib beralasan (ditandai TAMBAHAN).
 */
 
 Ext.onReady(function () {
     Ext.QuickTips.init();
+    // [FIX-DATE] Date.format('Y-m-d') Ext menghasilkan 'Y-10-13' di browser ini -> susun YYYY-MM-DD manual
+    function ymd(d) {
+        var m = d.getMonth() + 1, dd = d.getDate();
+        return d.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (dd < 10 ? '0' + dd : dd);
+    }
     document.getElementById("mainHeaderText").innerHTML = "RAB <i>Material</i>";
 
     var dataRecord = null;
     var rabCur = { id: null, code: 'IDR', baseCode: 'IDR', isBase: true, rate: 1, locked: null };
     var rateManual = false, rateReq = 0;
     var hdrForm = null, fCur, fRate, fRateDate, fRateInfo;
+    var plafon = null;      // [NEW] ringkasan plafon proyek yang sedang diedit (dari load_rab.plafon)
 
     function getFormAccess() {
         return (typeof formAccess !== 'undefined') ? formAccess : (window.formAccess || 0);
@@ -61,7 +72,7 @@ Ext.onReady(function () {
                     rabDtlDiv.style.display = 'block';
                     return;
                 }
-                renderRabDetailPanel(res.data.items || [], projectName, res.data.currency);
+                renderRabDetailPanel(res.data.items || [], projectName, res.data.currency, res.data.plafon);      // [CHANGED] + plafon
             },
             failure: function () {
                 rabDtlDiv.innerHTML = '<div style="color:red; padding:10px;">Gagal terhubung ke server.</div>';
@@ -70,7 +81,7 @@ Ext.onReady(function () {
         });
     }
 
-    function renderRabDetailPanel(rows, projectName, cur) {
+    function renderRabDetailPanel(rows, projectName, cur, pf) {
         var fmtQty = function (v) { return Ext.util.Format.number(v || 0, '0,000.0000'); };
         var fmtAmt = function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); };
         var fmtPct = function (v) { return Ext.util.Format.number(v || 0, '0.00') + '%'; };
@@ -79,9 +90,25 @@ Ext.onReady(function () {
         var curLine = '<div style="padding:0 2px 10px 2px;">Mata uang anggaran: <b>' + Ext.util.Format.htmlEncode(code) + '</b>' +
                       (cur && !cur.is_base ? ' &nbsp;|&nbsp; Kurs: <b>' + fmtAmt(cur.exch_rate) + '</b> ' +
                           Ext.util.Format.htmlEncode(cur.base_code || 'IDR') + ' per 1 ' + Ext.util.Format.htmlEncode(code) : '') + '</div>';
+        // [NEW] ringkasan plafon: Nilai Kontrak, Budget, Cadangan, total RAB, cadangan terpakai & sisa (mata uang dasar)
+        var plafonLine = '';
+        if (pf) {
+            var base = (cur && cur.base_code) || 'IDR';
+            var noContract = !(pf.contract_value > 0);
+            var low = pf.reserve_total > 0 && pf.reserve_remaining < pf.reserve_total * 0.1;
+            var remColor = noContract ? '#ff6b5e' : (pf.reserve_remaining <= 0 ? '#ff6b5e' : (low ? '#e6a817' : '#7fe0a0'));
+            plafonLine = '<div style="padding:6px 10px; margin:0 2px 10px 2px; background:#1f2d3a; border-radius:4px; line-height:1.7;">' +
+                (noContract
+                    ? '<span style="color:#ff6b5e;">Nilai Kontrak (plafon) belum diisi di Master Proyek - RAB tidak dapat disimpan.</span>'
+                    : 'Nilai Kontrak (plafon): <b>' + base + ' ' + fmtAmt(pf.contract_value) + '</b> &nbsp;|&nbsp; Budget (setara): <b>' + fmtAmt(pf.budget_base) + '</b>' +
+                      ' &nbsp;|&nbsp; Cadangan: <b>' + fmtAmt(pf.reserve_total) + '</b>') +
+                '<br>Total RAB (setara): <b>' + fmtAmt(pf.rab_total_base) + '</b> &nbsp;|&nbsp; Cadangan terpakai: <b>' + fmtAmt(pf.reserve_used) + '</b>' +
+                ' &nbsp;|&nbsp; <span style="color:' + remColor + ';">Sisa cadangan: <b>' + fmtAmt(pf.reserve_remaining) + '</b></span>' +
+                ' &nbsp;|&nbsp; Status proyek: <b>' + Ext.util.Format.htmlEncode(pf.project_status || '-') + '</b></div>';
+        }
         var html = '<h3 class="detail-title">Daftar Material RAB: ' +
                    Ext.util.Format.htmlEncode(projectName || '') + '</h3>' +
-                   '<hr class="detail-hr" />' + curLine +
+                   '<hr class="detail-hr" />' + curLine + plafonLine +
                    '<div id="rabDtlScroll" style="overflow-y: auto; overflow-x: auto;">' +
                    '<table id="rabTable" class="detail-table" width="100%" cellSpacing="0" cellPadding="0">' +
                    '<thead>' +
@@ -105,7 +132,8 @@ Ext.onReady(function () {
                 var totalBudget = (parseFloat(r.budget_qty) || 0) * (parseFloat(r.unit_price) || 0);
                 grandBudget += totalBudget;
                 html += '<tr class="data-row">' +
-                        '<td align="left">' + Ext.util.Format.htmlEncode(r.material_name || '-') + ' <span style="color:#668894;">(' + Ext.util.Format.htmlEncode(r.material_code || '') + ')</span></td>' +
+                        '<td align="left">' + Ext.util.Format.htmlEncode(r.material_name || '-') + ' <span style="color:#668894;">(' + Ext.util.Format.htmlEncode(r.material_code || '') + ')</span>' +
+                        (r.is_addendum ? ' <span style="color:#e6a817;font-weight:bold;" title="' + Ext.util.Format.htmlEncode(r.addendum_reason || '') + '">[TAMBAHAN]</span>' : '') + '</td>' +      // [NEW]
                         '<td align="right">' + fmtQty(r.budget_qty) + ' ' + Ext.util.Format.htmlEncode(r.unit || '') + '</td>' +
                         '<td align="right">' + fmtAmt(r.unit_price) + '</td>' +
                         '<td align="right" class="subtotal-val">' + fmtAmt(totalBudget) + '</td>' +
@@ -137,6 +165,7 @@ Ext.onReady(function () {
         { name: 'total_budget_base', type: 'float' },
         { name: 'total_actual_cost', type: 'float' },
         { name: 'currency_code' }, { name: 'budget_exch_rate', type: 'float' },
+        { name: 'contract_value', type: 'float' }, { name: 'budget_base', type: 'float' },      // [NEW] plafon
         { name: 'rab_status' }
     ];
 
@@ -150,7 +179,9 @@ Ext.onReady(function () {
         { name: 'unit' }, { name: 'budget_qty', type: 'float' }, { name: 'unit_price', type: 'float' },
         { name: 'tolerance_pct', type: 'float' },
         { name: 'total_qty_out', type: 'float' }, { name: 'remaining_qty', type: 'float' },
-        { name: 'usage_pct', type: 'float' }, { name: 'status' }
+        { name: 'usage_pct', type: 'float' }, { name: 'status' },
+        { name: 'orig_qty', type: 'float' }, { name: 'orig_price', type: 'float' },      // [NEW] nilai tersimpan (pembanding baris naik / baru)
+        { name: 'is_addendum' }, { name: 'addendum_reason' }
     ];
 
     var materialDs = new Ext.data.Store({
@@ -201,6 +232,18 @@ Ext.onReady(function () {
             {
                 header: 'Total Aktual (setara)', dataIndex: 'total_actual_cost', width: 140, align: 'right',
                 renderer: function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); }
+            },
+            {   // [NEW] plafon
+                header: 'Nilai Kontrak', dataIndex: 'contract_value', width: 130, align: 'right',
+                renderer: function (v) { return v > 0 ? Ext.util.Format.number(v, '0,000.00') : '<span style="color:#ff6b5e;">belum diisi</span>'; }
+            },
+            {   // [NEW] sisa cadangan = kontrak - max(budget, RAB), dalam mata uang dasar
+                header: 'Sisa Cadangan', dataIndex: 'contract_value', width: 130, align: 'right',
+                renderer: function (v, meta, rec) {
+                    if (!(v > 0)) return '-';
+                    var rem = v - Math.max(rec.get('budget_base') || 0, rec.get('total_budget_base') || 0);
+                    return '<span style="color:' + (rem <= 0 ? '#ff6b5e' : '#7fe0a0') + ';">' + Ext.util.Format.number(Math.max(rem, 0), '0,000.00') + '</span>';
+                }
             },
             {
                 header: 'Status RAB', dataIndex: 'rab_status', width: 110, align: 'center',
@@ -300,6 +343,12 @@ Ext.onReady(function () {
                     return '<span style="color:' + statusColor(v) + ';font-weight:bold;">' + Ext.util.Format.htmlEncode(v || '-') + '</span>';
                 }
             },
+            {   // [NEW] penanda baris tambahan yang memakai cadangan
+                header: 'Tambahan', dataIndex: 'is_addendum', width: 80, align: 'center',
+                renderer: function (v, meta, rec) {
+                    return v ? '<span style="color:#e6a817;font-weight:bold;" title="' + Ext.util.Format.htmlEncode(rec.get('addendum_reason') || '') + '">TAMBAHAN</span>' : '';
+                }
+            },
             {
                 id: 'rabDeleteCol', header: '', dataIndex: 'material_id', width: 32, align: 'center', fixed: true,
                 renderer: function () {
@@ -325,7 +374,8 @@ Ext.onReady(function () {
         if (gridEditorContainer && !document.getElementById('lblRabTotal')) {
             var totalsDiv = document.createElement('div');
             totalsDiv.style.cssText = 'padding:10px 14px; margin-top:8px; font-weight:bold; font-size:14px; text-align:right; background:#1f2d3a; color:#ffffff !important; border-radius:4px;';
-            totalsDiv.innerHTML = 'Total Budget RAB: <span id="lblRabTotal" style="color:#ffffff !important;">0.00</span>';
+            totalsDiv.innerHTML = 'Total Budget RAB: <span id="lblRabTotal" style="color:#ffffff !important;">0.00</span>' +
+                                  '<div id="lblRabPlafon" style="font-size:12px; font-weight:normal; margin-top:4px;"></div>';      // [NEW] bar plafon
             gridEditorContainer.parentNode.insertBefore(totalsDiv, gridEditorContainer.nextSibling);
 
             var btn = document.createElement('button');
@@ -359,6 +409,48 @@ Ext.onReady(function () {
             }
             el.innerHTML = html;
         }
+        updatePlafonBar(total);      // [NEW]
+    }
+
+    // [NEW] Kurs yang berlaku di editor (dipakai konversi ke mata uang dasar untuk cek plafon)
+    function curRate() { return parseFloat(fRate ? fRate.getValue() : rabCur.rate) || parseFloat(rabCur.rate) || 1; }
+
+    // [NEW] Evaluasi plafon: kembalikan {block: pesan|null, usesReserve, promptMsg}. Server memvalidasi ulang.
+    function plafonCheck(total) {
+        var res = { block: null, usesReserve: false, promptMsg: '' };
+        if (!plafon) return res;
+        var f = function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); };
+        var rate = curRate(), totalBase = total * rate, budgetBase = (plafon.budget || 0) * rate, contract = plafon.contract_value || 0;
+        if (contract <= 0 && plafon.require_contract) {
+            res.block = 'Nilai Kontrak (plafon) proyek belum diisi. Isi dulu di Master Proyek.';
+        } else if (contract > 0 && budgetBase > contract + 0.01) {
+            res.block = 'Budget proyek (setara ' + f(budgetBase) + ') melebihi Nilai Kontrak (' + f(contract) + '). Perbaiki di Master Proyek.';
+        } else if (contract > 0 && totalBase > contract + 0.01) {
+            res.block = 'Total RAB setara ' + f(totalBase) + ' melebihi Nilai Kontrak / plafon (' + f(contract) + '). Kelebihan ' + f(totalBase - contract) + '.';
+        } else if (plafon.phase === 'planning' && plafon.budget > 0 && totalBase > budgetBase + 0.01) {
+            res.block = 'Total RAB setara ' + f(totalBase) + ' melebihi Budget proyek (' + f(budgetBase) + '). Cadangan baru bisa dipakai setelah proyek berstatus Berjalan.';
+        } else if (plafon.phase === 'running' && plafon.budget > 0 && totalBase > budgetBase + 0.01) {
+            res.usesReserve = true;
+            res.promptMsg = 'Penambahan ini memakai cadangan: <b>' + f(totalBase - budgetBase) + '</b> dari <b>' + f(Math.max(contract - budgetBase, 0)) +
+                            '</b> (sisa ' + f(Math.max(contract - totalBase, 0)) + ').<br>Tulis alasan penambahan material:';
+        }
+        return res;
+    }
+
+    // [NEW] Bar plafon di bawah total RAB (mata uang dasar)
+    function updatePlafonBar(total) {
+        var el = document.getElementById('lblRabPlafon');
+        if (!el) return;
+        if (!plafon) { el.innerHTML = ''; return; }
+        var f = function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); };
+        var rate = curRate(), totalBase = total * rate, budgetBase = (plafon.budget || 0) * rate, contract = plafon.contract_value || 0;
+        if (contract <= 0) { el.innerHTML = '<span style="color:#ff6b5e;">Nilai Kontrak (plafon) belum diisi di Master Proyek.</span>'; return; }
+        var chk = plafonCheck(total);
+        var color = chk.block ? '#ff6b5e' : (chk.usesReserve ? '#e6a817' : '#7fe0a0');
+        el.innerHTML = '<span style="color:' + color + ';">Plafon (Nilai Kontrak) ' + f(contract) + ' &nbsp;|&nbsp; Budget ' + f(budgetBase) +
+                       ' &nbsp;|&nbsp; Cadangan ' + f(Math.max(contract - budgetBase, 0)) + ' &nbsp;|&nbsp; Total RAB ' + f(totalBase) +
+                       ' &nbsp;|&nbsp; Cadangan terpakai ' + f(Math.max(totalBase - budgetBase, 0)) + ' &nbsp;|&nbsp; Sisa plafon ' + f(contract - totalBase) +
+                       (chk.block ? ' &nbsp;(MELEBIHI BATAS)' : (chk.usesReserve ? ' &nbsp;(MEMAKAI CADANGAN)' : '')) + '</span>';
     }
 
     // ------------------------------------------------------------
@@ -431,7 +523,7 @@ Ext.onReady(function () {
         var token = ++rateReq;
         Ext.Ajax.request({
             url: '../php-crud/rabCRD.php', method: 'POST',
-            params: { task: 'get_exchange_rate', currency_id: cid, date: dt.format('Y-m-d') },
+            params: { task: 'get_exchange_rate', currency_id: cid, date: ymd(dt) },      // [FIX-DATE]
             success: function (response) {
                 if (token !== rateReq) return;
                 var res;
@@ -482,7 +574,8 @@ Ext.onReady(function () {
         var rec = new RabRecord({
             id: 0, material_id: null, material_code: '', material_name: '', unit: '',
             budget_qty: 0, unit_price: 0, tolerance_pct: 0,
-            total_qty_out: 0, remaining_qty: 0, usage_pct: 0, status: 'ON TRACK'
+            total_qty_out: 0, remaining_qty: 0, usage_pct: 0, status: 'ON TRACK',
+            orig_qty: 0, orig_price: 0, is_addendum: false, addendum_reason: ''      // [NEW]
         });
         rabItemDs.add(rec);
         updateRabTotalLabel();
@@ -510,7 +603,10 @@ Ext.onReady(function () {
                     Ext.Msg.alert('Gagal', res.message || 'Gagal memuat RAB.');
                     return;
                 }
-                rabItemDs.loadData({ data: res.data.items || [] });
+                var loadedItems = res.data.items || [];
+                Ext.each(loadedItems, function (i) { i.orig_qty = i.budget_qty; i.orig_price = i.unit_price; });      // [NEW] pembanding baris naik / baru
+                plafon = res.data.plafon || null;      // [NEW]
+                rabItemDs.loadData({ data: loadedItems });
                 document.getElementById('editorWdw').style.display = 'block';
                 applyCurrencyFromServer(res.data.currency);
                 document.getElementById('editorFormHeaderText').innerHTML = '&nbsp;&nbsp;RAB Material -- ' + Ext.util.Format.htmlEncode(res.data.name || '');
@@ -521,10 +617,43 @@ Ext.onReady(function () {
         });
     };
 
+    // [CHANGED 2026-10-12] Simpan RAB: cek plafon di klien (server memvalidasi ulang); bila memakai cadangan, minta alasan
+    //                       untuk baris baru / yang dinaikkan, lalu kirim lewat sendSave().
+    function sendSave(arrItems) {
+        Ext.Ajax.request({
+            url: '../php-crud/rabCRD.php',
+            method: 'POST',
+            params: {
+                task: 'save_rab',
+                project_id: dataRecord.id,
+                currency_id: fCur ? fCur.getValue() : 0,
+                exch_rate: fRate ? (fRate.getValue() || 1) : 1,
+                rate_date: (fRateDate && fRateDate.getValue()) ? ymd(fRateDate.getValue()) : ''      /* [FIX-DATE] */,
+                items: Ext.util.JSON.encode(arrItems)
+            },
+            success: function (response) {
+                var res;
+                try { res = Ext.util.JSON.decode(response.responseText); }
+                catch (e) { Ext.Msg.alert('Gagal', 'Respons server tidak valid (cek error_log PHP).'); return; }
+                if (res.success) {
+                    Ext.Msg.alert('Sukses', res.message || 'RAB material berhasil disimpan.');      // [CHANGED] pesan server memuat info cadangan
+                    mainDs.load();
+                    document.getElementById('editorWdw').style.display = 'none';
+                    loadRabDetailPanel(dataRecord.id, dataRecord.name);
+                } else {
+                    Ext.Msg.alert('Gagal', res.message || 'Terjadi kesalahan sistem.');
+                }
+            },
+            failure: function () {
+                Ext.Msg.alert('Gagal', 'Gagal menghubungi server.');
+            }
+        });
+    }
+
     document.getElementById('saveEdit').onclick = function () {
         if (!dataRecord) return;
 
-        var arrItems = [];
+        var arrItems = [], flagged = [], total = 0;
         var hasInvalidRow = false;
         var materialSet = {};
         var duplicateFound = false;
@@ -532,11 +661,12 @@ Ext.onReady(function () {
         rabItemDs.each(function (r) {
             var materialId = r.get('material_id');
             var qty = parseFloat(r.get('budget_qty')) || 0;
-            
+            var price = parseFloat(r.get('unit_price')) || 0;
+
             if (!materialId && qty <= 0) return;
-            if (!materialId || qty <= 0) { 
-                hasInvalidRow = true; 
-                return; 
+            if (!materialId || qty <= 0) {
+                hasInvalidRow = true;
+                return;
             }
 
             if (materialSet[materialId]) {
@@ -545,13 +675,22 @@ Ext.onReady(function () {
                 materialSet[materialId] = true;
             }
 
-            arrItems.push({
+            // [NEW] baris baru / qty naik / nilai naik dibanding RAB tersimpan -> kandidat 'tambahan' (butuh alasan bila pakai cadangan)
+            var origQty = parseFloat(r.get('orig_qty')) || 0;
+            var origVal = origQty * (parseFloat(r.get('orig_price')) || 0);
+            var isUp = origQty <= 0 || qty > origQty + 0.00005 || qty * price > origVal + 0.005;
+            total += Math.round(qty * price * 100) / 100;
+
+            var item = {
                 id: r.get('id') || 0,
                 material_id: materialId,
                 budget_qty: qty,
-                unit_price: parseFloat(r.get('unit_price')) || 0,
-                tolerance_pct: parseFloat(r.get('tolerance_pct')) || 0
-            });
+                unit_price: price,
+                tolerance_pct: parseFloat(r.get('tolerance_pct')) || 0,
+                addendum_reason: ''
+            };
+            if (isUp) flagged.push(item);
+            arrItems.push(item);
         });
 
         if (hasInvalidRow) {
@@ -564,32 +703,19 @@ Ext.onReady(function () {
             return;
         }
 
-        Ext.Ajax.request({
-            url: '../php-crud/rabCRD.php',
-            method: 'POST',
-            params: {
-                task: 'save_rab',
-                project_id: dataRecord.id,
-                currency_id: fCur ? fCur.getValue() : 0,
-                exch_rate: fRate ? (fRate.getValue() || 1) : 1,
-                rate_date: (fRateDate && fRateDate.getValue()) ? fRateDate.getValue().format('Y-m-d') : '',
-                items: Ext.util.JSON.encode(arrItems)
-            },
-            success: function (response) {
-                var res = Ext.util.JSON.decode(response.responseText);
-                if (res.success) {
-                    Ext.Msg.alert('Sukses', 'RAB material berhasil disimpan.');
-                    mainDs.load();
-                    document.getElementById('editorWdw').style.display = 'none';
-                    loadRabDetailPanel(dataRecord.id, dataRecord.name);
-                } else {
-                    Ext.Msg.alert('Gagal', res.message || 'Terjadi kesalahan sistem.');
-                }
-            },
-            failure: function () {
-                Ext.Msg.alert('Gagal', 'Gagal menghubungi server.');
-            }
-        });
+        var chk = plafonCheck(total);      // [NEW] plafon
+        if (chk.block) { Ext.Msg.alert('Melebihi Plafon', chk.block); return; }
+        if (chk.usesReserve && flagged.length) {
+            Ext.Msg.prompt('Alasan Penambahan (Pakai Cadangan)', chk.promptMsg, function (btn, text) {
+                if (btn !== 'ok') return;
+                text = Ext.util.Format.trim(text || '');
+                if (!text) { Ext.Msg.alert('Peringatan', 'Alasan penambahan wajib diisi.'); return; }
+                Ext.each(flagged, function (it) { it.addendum_reason = text; });
+                sendSave(arrItems);
+            }, this, true);
+            return;
+        }
+        sendSave(arrItems);
     };
 
     document.getElementById('popOK').onclick = function () {

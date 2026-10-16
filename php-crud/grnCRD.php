@@ -17,6 +17,11 @@
  *  - grn_hdr.vehicle_plate_no (varchar 20) & grn_hdr.driver_name (varchar 100), opsional.
  *  - Dinormalisasi server (plat = huruf besar, spasi dirapikan) di GrnCleanVehicle().
  *  - Task baru 'read_grn_print': data header + item untuk cetak Tanda Terima GRN (tanpa harga).
+ *
+ * [NEW 2026-10-12] NO. DO SUPPLIER (sql/2026-10-12.grn_supplier_do.sql):
+ *  - grn_hdr.supplier_do_no (varchar 100). Satu-satunya tempat input No. DO supplier; W/H RCV dan Retur Pembelian
+ *    hanya MENURUNKAN nomor ini (join grn_hdr) sehingga bisa di-trace GRN -> W/H RCV -> Retur.
+ *  - Dinormalisasi di GrnCleanDo(); GRN_REQUIRE_DO = true -> wajib diisi untuk GRN baru / hasil edit.
  * ============================================================
  */
 
@@ -27,6 +32,7 @@ session_start();
 header('Content-Type: application/json');
 
 const GRN_PO_STATUS_LIST = ['Disetujui'];     // status PO yang boleh di-GRN
+const GRN_REQUIRE_DO = false;                 // [NEW] true = No. DO Supplier wajib diisi (aktifkan setelah form grn00.js punya field-nya)
 const GRN_REQUIRE_VEHICLE = false;            // [NEW] true = plat no & nama driver wajib diisi saat simpan GRN
 
 $task = $_REQUEST['task'] ?? '';
@@ -179,7 +185,7 @@ try {
         case 'read':
             // [CHG] tambah g.vehicle_plate_no, g.driver_name untuk kolom grid & panel detail
             $sql = "SELECT g.id, g.ref_no, g.grn_date, g.status, g.remark,
-                           g.vehicle_plate_no, g.driver_name,
+                           g.vehicle_plate_no, g.driver_name, g.supplier_do_no,      -- [NEW] No. DO Supplier
                            p.po_number AS po_ref_no, g.po_id, s.id AS supplier_id, s.name AS supplier_name,
                            (SELECT COALESCE(SUM(qty_received),0) FROM grn_dtl d WHERE d.grn_hdr_id = g.id) AS total_qty,
                            (SELECT COALESCE(SUM(qty_received * unit_cost),0) FROM grn_dtl d WHERE d.grn_hdr_id = g.id) AS total_amount,
@@ -223,7 +229,7 @@ try {
 
             $hRes = pg_query_params(
                 "SELECT g.id, g.ref_no, g.grn_date, g.status, g.remark,
-                        g.vehicle_plate_no, g.driver_name,
+                        g.vehicle_plate_no, g.driver_name, g.supplier_do_no,      -- [NEW]
                         p.po_number AS po_ref_no, p.po_date AS po_date,
                         pr.name AS project_name,
                         s.name AS supplier_name,
@@ -271,6 +277,7 @@ try {
             $created_by  = $_SESSION['user_id'] ?? null;
             // [NEW] plat no kendaraan & nama driver (dinormalisasi / divalidasi)
             $veh         = GrnCleanVehicle($_REQUEST['vehicle_plate_no'] ?? '', $_REQUEST['driver_name'] ?? '');
+            $doNo        = GrnCleanDo($_REQUEST['supplier_do_no'] ?? '');      // [NEW] No. DO Supplier
 
             if (!$po_id) throw new Exception('PO belum dipilih');
 
@@ -304,10 +311,10 @@ try {
             // [CHG] INSERT + vehicle_plate_no ($9), driver_name ($10)
             $hdrResult = pg_query_params(
                 "INSERT INTO grn_hdr (ref_no, grn_date, po_id, supplier_id, status, remark, created_by, created_at, currency_id, exch_rate,
-                                      vehicle_plate_no, driver_name)
-                 VALUES ($1,$2,$3,$4,'open',$5,$6,NOW(),$7,$8,$9,$10) RETURNING id",
+                                      vehicle_plate_no, driver_name, supplier_do_no)
+                 VALUES ($1,$2,$3,$4,'open',$5,$6,NOW(),$7,$8,$9,$10,$11) RETURNING id",      // [CHG] + supplier_do_no ($11)
                 [$ref_no, $grn_date, $po_id, $supplier_id, $remark, $created_by, $po_currency, $po_rate,
-                 $veh['plate'], $veh['driver']]
+                 $veh['plate'], $veh['driver'], $doNo]
             );
             PgOrFail($hdrResult, 'Gagal insert grn_hdr');
             $grn_hdr_id = pg_fetch_result($hdrResult, 0, 'id');
@@ -327,6 +334,7 @@ try {
             $arrItems    = json_decode($_REQUEST['arrItems'] ?? '[]', true);
             // [NEW] plat no kendaraan & nama driver
             $veh         = GrnCleanVehicle($_REQUEST['vehicle_plate_no'] ?? '', $_REQUEST['driver_name'] ?? '');
+            $doNo        = GrnCleanDo($_REQUEST['supplier_do_no'] ?? '');      // [NEW] No. DO Supplier
 
             if (!$id) throw new Exception('GRN tidak valid');
 
@@ -357,9 +365,9 @@ try {
             // [CHG] UPDATE + vehicle_plate_no ($5), driver_name ($6); id jadi $7
             $upd = pg_query_params(
                 "UPDATE grn_hdr SET supplier_id = $1, grn_date = $2, remark = $3,
-                        vehicle_plate_no = $4, driver_name = $5
-                  WHERE id = $6",
-                [$supplier_id, $grn_date, $remark, $veh['plate'], $veh['driver'], $id]
+                        vehicle_plate_no = $4, driver_name = $5, supplier_do_no = $6
+                  WHERE id = $7",      // [CHG] + supplier_do_no ($6); id jadi $7
+                [$supplier_id, $grn_date, $remark, $veh['plate'], $veh['driver'], $doNo, $id]
             );
             PgOrFail($upd, 'Gagal update grn_hdr');
 
@@ -421,6 +429,21 @@ function GrnCleanVehicle($plate, $driver) {
     if ($driver !== '' && $drvLen > 100) throw new Exception('Nama Driver maksimal 100 karakter.');
 
     return ['plate' => ($plate === '' ? null : $plate), 'driver' => ($driver === '' ? null : $driver)];
+}
+
+/**
+ * [NEW] Normalisasi & validasi No. DO Supplier (nomor surat jalan dari supplier).
+ *  - Spasi dirapikan, maks 100 karakter. Kosong disimpan NULL, kecuali GRN_REQUIRE_DO = true (wajib diisi).
+ */
+function GrnCleanDo($do) {
+    $do = trim(preg_replace('/\s+/', ' ', (string)$do));
+    if ($do === '') {
+        if (GRN_REQUIRE_DO) throw new Exception('No. DO Supplier wajib diisi.');
+        return null;
+    }
+    $len = function_exists('mb_strlen') ? mb_strlen($do, 'UTF-8') : preg_match_all('/./us', $do);
+    if ($len > 100) throw new Exception('No. DO Supplier maksimal 100 karakter.');
+    return $do;
 }
 
 function InsertGrnItems($grn_hdr_id, $arrItems, $exclude_grn_hdr_id, $rate = 1.0) {

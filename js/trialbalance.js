@@ -81,6 +81,16 @@ Ext.onReady(function () {
         ]
     });
 
+    // [FIT-GRID][NEW] Tinggi grid = sisa tinggi layar di bawah posisi grid (setelah filter bar & summary), sisakan ruang
+    //                 untuk toolbar paging di bawah agar tidak terpotong. gridMain dibuat di bawah (dipakai setelah ada).
+    function fitGrid() {
+        if (typeof gridMain === 'undefined' || !gridMain || !gridMain.rendered) return;
+        var top = gridContainer.getBoundingClientRect().top;
+        var h = (window.innerHeight || document.documentElement.clientHeight) - top - 24;
+        gridMain.setHeight(Math.max(h, 220));
+    }
+    window.onresize = fitGrid;
+
     function loadTrialBalance() {
         var perId = fldPeriod.getValue();
         if (!perId) return;
@@ -112,6 +122,7 @@ Ext.onReady(function () {
                     ' &nbsp;|&nbsp; <b>Total Debit:</b> ' + Ext.util.Format.number(res.total_debit, '0,000.00') +
                     ' &nbsp;|&nbsp; <b>Total Kredit:</b> ' + Ext.util.Format.number(res.total_credit, '0,000.00') +
                     ' &nbsp;|&nbsp; <b style="color:' + balanceColor + ';">' + balanceText + '</b>';
+                fitGrid();     // [FIT-GRID] summary mengubah posisi grid -> sesuaikan tinggi
             }
         });
     }
@@ -145,6 +156,7 @@ Ext.onReady(function () {
         pageSize: 500,
         pageStore: tbDs
     });
+    fitGrid();     // [FIT-GRID] tinggi awal sesuai layar
 
     document.getElementById('printData').onclick = function () {
         var perId = fldPeriod.getValue();

@@ -2,15 +2,6 @@
 /*
   Document      : Financial Report - Neraca & Laba Rugi
   Called from   : js/m.financialreport.js
-  Note          : - Neraca (Aset/Liabilitas/Ekuitas): saldo KUMULATIF sampai
-                    akhir periode terpilih (sama seperti Trial Balance).
-                  - Laba Rugi (Pendapatan/Beban): HANYA mutasi DALAM periode
-                    terpilih (bukan kumulatif -- laporan per-periode).
-                  - Sistem ini belum ada mekanisme closing entries, jadi
-                    "Laba (Rugi) Kumulatif" ditambahkan otomatis ke sisi
-                    Ekuitas Neraca (dihitung dari akumulasi Pendapatan-Beban
-                    sejak awal sampai akhir periode) supaya identitas
-                    Aset = Liabilitas + Ekuitas tetap balance.
 */
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 
@@ -28,7 +19,6 @@ $db   = new crud();
 
 switch ($task) {
 
-    // ==============================================================
     case 'read_periods':
         $sql = "SELECT id, period_name, start_date, end_date FROM accounting_periods ORDER BY start_date DESC";
         $stmt = $db->query($sql);
@@ -36,7 +26,6 @@ switch ($task) {
         echo json_encode(['success' => true, 'data' => $data]);
         break;
 
-    // ==============================================================
     case 'read_report':
         $periodId = intval($_POST['period_id'] ?? 0);
         if ($periodId <= 0) {
@@ -54,24 +43,29 @@ switch ($task) {
         $startDate = $period['start_date'];
         $endDate   = $period['end_date'];
 
-        // ------------------------------------------------------------
-        // NERACA -- saldo kumulatif per akun (asset/liability/equity)
-        // sampai dengan akhir periode.
-        // ------------------------------------------------------------
+        // NERACA (Kumulatif s/d end_date) - Mencakup asset, bank, cash, liability, equity
         $sqlBS = "
             SELECT c.account_code, c.account_name, c.account_type,
                    COALESCE(SUM(
-                       CASE WHEN c.account_type = 'asset' THEN l.debit - l.credit
-                            ELSE l.credit - l.debit END
+                       CASE WHEN j.id IS NOT NULL THEN
+                           CASE WHEN c.account_type IN ('asset', 'bank', 'cash') THEN l.debit - l.credit
+                                ELSE l.credit - l.debit END
+                       ELSE 0 END
                    ), 0) AS balance
             FROM chart_of_accounts c
             LEFT JOIN journal_lines l ON l.account_id = c.id
             LEFT JOIN journal_entries j ON j.id = l.journal_id
                 AND j.status IN ('posted', 'reversed')
                 AND j.journal_date <= :end_date
-            WHERE c.is_active = true AND c.account_type IN ('asset', 'liability', 'equity')
+            WHERE c.is_active = true 
+              AND c.account_type IN ('asset', 'bank', 'cash', 'liability', 'equity')
             GROUP BY c.id, c.account_code, c.account_name, c.account_type
-            HAVING COALESCE(SUM(CASE WHEN c.account_type = 'asset' THEN l.debit - l.credit ELSE l.credit - l.debit END), 0) != 0
+            HAVING COALESCE(SUM(
+                CASE WHEN j.id IS NOT NULL THEN
+                    CASE WHEN c.account_type IN ('asset', 'bank', 'cash') THEN l.debit - l.credit
+                         ELSE l.credit - l.debit END
+                ELSE 0 END
+            ), 0) != 0
             ORDER BY c.account_code ASC
         ";
         $stmtBS = $db->prepare($sqlBS);
@@ -83,44 +77,61 @@ switch ($task) {
         foreach ($bsRows as $r) {
             $bal = floatval($r['balance']);
             $item = ['account_code' => $r['account_code'], 'account_name' => $r['account_name'], 'balance' => $bal];
-            if ($r['account_type'] === 'asset')     { $asset[] = $item;     $assetTotal += $bal; }
-            if ($r['account_type'] === 'liability')  { $liability[] = $item; $liabilityTotal += $bal; }
-            if ($r['account_type'] === 'equity')     { $equity[] = $item;    $equityTotal += $bal; }
+            if (in_array($r['account_type'], ['asset', 'bank', 'cash'])) { 
+                $asset[] = $item; 
+                $assetTotal += $bal; 
+            } else if ($r['account_type'] === 'liability')  { 
+                $liability[] = $item; 
+                $liabilityTotal += $bal; 
+            } else if ($r['account_type'] === 'equity')     { 
+                $equity[] = $item;    
+                $equityTotal += $bal; 
+            }
         }
 
-        // Laba (Rugi) KUMULATIF sejak awal s/d akhir periode -- plug ke Ekuitas
+        // Laba/Rugi Kumulatif s/d end_date
         $sqlNI = "
             SELECT COALESCE(SUM(
-                CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
-                     ELSE -(l.debit - l.credit) END
+                CASE WHEN j.id IS NOT NULL THEN
+                    CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
+                         ELSE -(l.debit - l.credit) END
+                ELSE 0 END
             ), 0) AS net_income
-            FROM journal_lines l
-            JOIN journal_entries j ON j.id = l.journal_id AND j.status IN ('posted','reversed') AND j.journal_date <= :end_date
-            JOIN chart_of_accounts c ON c.id = l.account_id
+            FROM chart_of_accounts c
+            LEFT JOIN journal_lines l ON l.account_id = c.id
+            LEFT JOIN journal_entries j ON j.id = l.journal_id 
+                AND j.status IN ('posted','reversed') 
+                AND j.journal_date <= :end_date
             WHERE c.account_type IN ('revenue', 'expense')
         ";
         $stmtNI = $db->prepare($sqlNI);
         $stmtNI->execute(['end_date' => $endDate]);
-        $netIncomeCumulative = floatval($stmtNI->fetch(PDO::FETCH_ASSOC)['net_income']);
+        $netIncomeCumulative = floatval($stmtNI->fetch(PDO::FETCH_ASSOC)['net_income'] ?? 0);
         $equityTotal += $netIncomeCumulative;
 
-        // ------------------------------------------------------------
-        // LABA RUGI -- HANYA mutasi DALAM periode terpilih (bukan kumulatif)
-        // ------------------------------------------------------------
+        // LABA RUGI (Mutasi dalam periode terpilih)
         $sqlIS = "
             SELECT c.account_code, c.account_name, c.account_type,
                    COALESCE(SUM(
-                       CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
-                            ELSE l.debit - l.credit END
+                       CASE WHEN j.id IS NOT NULL THEN
+                           CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
+                                ELSE l.debit - l.credit END
+                       ELSE 0 END
                    ), 0) AS amount
             FROM chart_of_accounts c
-            JOIN journal_lines l ON l.account_id = c.id
-            JOIN journal_entries j ON j.id = l.journal_id
+            LEFT JOIN journal_lines l ON l.account_id = c.id
+            LEFT JOIN journal_entries j ON j.id = l.journal_id
                 AND j.status IN ('posted', 'reversed')
                 AND j.journal_date BETWEEN :start_date AND :end_date
-            WHERE c.is_active = true AND c.account_type IN ('revenue', 'expense')
+            WHERE c.is_active = true 
+              AND c.account_type IN ('revenue', 'expense')
             GROUP BY c.id, c.account_code, c.account_name, c.account_type
-            HAVING COALESCE(SUM(CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit ELSE l.debit - l.credit END), 0) != 0
+            HAVING COALESCE(SUM(
+                CASE WHEN j.id IS NOT NULL THEN
+                    CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
+                         ELSE l.debit - l.credit END
+                ELSE 0 END
+            ), 0) != 0
             ORDER BY c.account_code ASC
         ";
         $stmtIS = $db->prepare($sqlIS);
@@ -132,8 +143,13 @@ switch ($task) {
         foreach ($isRows as $r) {
             $amt = floatval($r['amount']);
             $item = ['account_code' => $r['account_code'], 'account_name' => $r['account_name'], 'amount' => $amt];
-            if ($r['account_type'] === 'revenue') { $revenue[] = $item; $revenueTotal += $amt; }
-            if ($r['account_type'] === 'expense')  { $expense[] = $item; $expenseTotal += $amt; }
+            if ($r['account_type'] === 'revenue') { 
+                $revenue[] = $item; 
+                $revenueTotal += $amt; 
+            } else if ($r['account_type'] === 'expense')  { 
+                $expense[] = $item; 
+                $expenseTotal += $amt; 
+            }
         }
         $netIncomePeriod = $revenueTotal - $expenseTotal;
 
@@ -156,7 +172,6 @@ switch ($task) {
         ]);
         break;
 
-    // ==============================================================
     default:
-        echo json_encode(['success' => false, 'message' => 'Task tidak dikenali: ' . htmlspecialchars($task)]);
+        echo json_encode(['success' => false, 'message' => 'Task tidak dikenali.']);
 }

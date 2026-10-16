@@ -20,8 +20,6 @@ $db     = new crud();
 
 switch ($task) {
 
-    // ==============================================================
-    // READ: Data Periode
     case 'read_periods':
         $sql = "SELECT id, period_name, start_date, end_date FROM accounting_periods ORDER BY start_date DESC";
         $stmt = $db->query($sql);
@@ -29,8 +27,6 @@ switch ($task) {
         echo json_encode(['success' => true, 'data' => $data]);
         break;
 
-    // ==============================================================
-    // READ: Laporan Rugi Laba Utama
     case 'read_profit_loss':
         $periodId = intval($_POST['period_id'] ?? $_REQUEST['period_id'] ?? 0);
         if ($periodId <= 0) {
@@ -49,9 +45,11 @@ switch ($task) {
         $sql = "
             SELECT c.id, c.account_code, c.account_name, c.account_type,
                    COALESCE(SUM(
-                       CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
-                            WHEN c.account_type = 'expense' THEN l.debit - l.credit
-                            ELSE 0 END
+                       CASE WHEN j.id IS NOT NULL THEN
+                           CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
+                                WHEN c.account_type = 'expense' THEN l.debit - l.credit
+                                ELSE 0 END
+                       ELSE 0 END
                    ), 0) AS amount
             FROM chart_of_accounts c
             LEFT JOIN journal_lines l ON l.account_id = c.id
@@ -108,71 +106,38 @@ switch ($task) {
         ]);
         break;
 
-    // ==============================================================
-    // CREATE: Tambah Pemetaan Akun Baru (Pendapatan / Beban)
     case 'create':
-        if ($access < 2) {
-            echo json_encode(['success' => false, 'message' => 'Akses ditolak.']);
-            exit;
-        }
+        if ($access < 2) { echo json_encode(['success' => false, 'message' => 'Akses ditolak.']); exit; }
         $code = trim($_POST['account_code'] ?? '');
         $name = trim($_POST['account_name'] ?? '');
         $type = trim($_POST['account_type'] ?? '');
-
         if (empty($code) || empty($name) || !in_array($type, ['revenue', 'expense'])) {
-            echo json_encode(['success' => false, 'message' => 'Kode, Nama, dan Tipe (revenue/expense) wajib diisi.']);
-            exit;
+            echo json_encode(['success' => false, 'message' => 'Data tidak lengkap.']); exit;
         }
-
-        $db->insert('chart_of_accounts', [
-            'account_code' => $code,
-            'account_name' => $name,
-            'account_type' => $type,
-            'is_active'    => true
-        ]);
-        echo json_encode(['success' => true, 'message' => 'Akun Rugi Laba berhasil ditambahkan.']);
+        $db->insert('chart_of_accounts', ['account_code' => $code, 'account_name' => $name, 'account_type' => $type, 'is_active' => true]);
+        echo json_encode(['success' => true, 'message' => 'Akun berhasil ditambahkan.']);
         break;
 
-    // ==============================================================
-    // UPDATE: Update Informasi Akun Rugi Laba
     case 'update':
-        if ($access < 3) {
-            echo json_encode(['success' => false, 'message' => 'Akses ditolak.']);
-            exit;
-        }
-        $id   = intval($_POST['id'] ?? 0);
+        if ($access < 3) { echo json_encode(['success' => false, 'message' => 'Akses ditolak.']); exit; }
+        $id = intval($_POST['id'] ?? 0);
         $code = trim($_POST['account_code'] ?? '');
         $name = trim($_POST['account_name'] ?? '');
-
         if ($id <= 0 || empty($code) || empty($name)) {
-            echo json_encode(['success' => false, 'message' => 'ID, Kode, dan Nama Akun tidak valid.']);
-            exit;
+            echo json_encode(['success' => false, 'message' => 'Data tidak valid.']); exit;
         }
-
-        $db->update('chart_of_accounts', [
-            'account_code' => $code,
-            'account_name' => $name
-        ], "id = {$id}");
-        echo json_encode(['success' => true, 'message' => 'Akun Rugi Laba berhasil diperbarui.']);
+        $db->update('chart_of_accounts', ['account_code' => $code, 'account_name' => $name], "id = {$id}");
+        echo json_encode(['success' => true, 'message' => 'Akun berhasil diperbarui.']);
         break;
 
-    // ==============================================================
-    // DELETE: Soft Delete Akun (Nonaktifkan Akun)
     case 'delete':
-        if ($access < 4) {
-            echo json_encode(['success' => false, 'message' => 'Akses ditolak.']);
-            exit;
-        }
+        if ($access < 4) { echo json_encode(['success' => false, 'message' => 'Akses ditolak.']); exit; }
         $id = intval($_POST['id'] ?? 0);
-        if ($id <= 0) {
-            echo json_encode(['success' => false, 'message' => 'ID Akun tidak valid.']);
-            exit;
-        }
-
+        if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID tidak valid.']); exit; }
         $db->update('chart_of_accounts', ['is_active' => false], "id = {$id}");
-        echo json_encode(['success' => true, 'message' => 'Akun berhasil dinonaktifkan.']);
+        echo json_encode(['success' => true, 'message' => 'Akun dinonaktifkan.']);
         break;
 
     default:
-        echo json_encode(['success' => false, 'message' => 'Task tidak dikenali: ' . htmlspecialchars($task)]);
+        echo json_encode(['success' => false, 'message' => 'Task tidak dikenali.']);
 }

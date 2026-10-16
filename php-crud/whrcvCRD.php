@@ -152,6 +152,7 @@ try {
         case 'list':
             $sql = "SELECT w.id, w.ref_no, w.received_date, w.status,
                            wh.name AS warehouse_name, g.ref_no AS grn_ref_no,
+                           g.supplier_do_no,      -- [NEW] No. DO Supplier (dari GRN, read-only)
                            s.name AS supplier_name,
                            (SELECT COALESCE(SUM(qty_received * unit_cost), 0)
                             FROM wh_receiving_dtl d

@@ -11,6 +11,11 @@
 */
 
 Ext.onReady(function () {
+    // [FIX-DATE] Date.format('Y-m-d') Ext menghasilkan 'Y-10-13' di browser ini -> susun YYYY-MM-DD manual
+    function ymd(d) {
+        var m = d.getMonth() + 1, dd = d.getDate();
+        return d.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (dd < 10 ? '0' + dd : dd);
+    }
     Ext.QuickTips.init();
     document.getElementById("mainHeaderText").innerHTML = "Penerimaan <em>Fisik Gudang</em>";
 
@@ -51,7 +56,8 @@ Ext.onReady(function () {
     // ------------------------------------------------------------
     var whrcvField = [
         { name: 'id' }, { name: 'ref_no' }, { name: 'received_date', type: 'date', dateFormat: 'Y-m-d' },
-        { name: 'grn_hdr_id' }, { name: 'grn_ref_no' }, { name: 'warehouse_id' }, { name: 'warehouse_name' },
+        { name: 'grn_hdr_id' }, { name: 'grn_ref_no' }, { name: 'supplier_do_no' }, { name: 'warehouse_id' },      // [NEW] supplier_do_no (dari GRN)
+         { name: 'warehouse_name' },
         { name: 'supplier_name' }, { name: 'status' }, { name: 'remark' },
         { name: 'total_amount', type: 'float' }, { name: 'total_txn', type: 'float' }, { name: 'currency_code' }
     ];
@@ -135,6 +141,7 @@ Ext.onReady(function () {
         columns: [
             { header: 'No. WH Rcv', dataIndex: 'ref_no', width: 120, renderer: CellWrap },
             { header: 'No. GRN', dataIndex: 'grn_ref_no', width: 120, renderer: CellWrap },
+            { header: 'No. DO Supplier', dataIndex: 'supplier_do_no', width: 130, renderer: function (v) { return CellWrap(v || '-'); } },      // [NEW] diturunkan dari GRN
             { header: 'Supplier', dataIndex: 'supplier_name', width: 170, renderer: CellWrap },
             { header: 'Gudang', dataIndex: 'warehouse_name', width: 120, renderer: CellWrap },
             { header: 'Tgl Terima', dataIndex: 'received_date', width: 90, renderer: Ext.util.Format.dateRenderer('d M Y') },
@@ -639,7 +646,7 @@ Ext.onReady(function () {
                 task: 'create',
                 grn_hdr_id: grnHdrId,
                 warehouse_id: fldWarehouse.getValue(),
-                received_date: fldReceivedDate.getValue().format('Y-m-d'),
+                received_date: ymd(fldReceivedDate.getValue()),      // [FIX-DATE]
                 items: JSON.stringify(arrItems)
             },
             waitTitle: 'Menyimpan',

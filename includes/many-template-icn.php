@@ -1,4 +1,4 @@
-<link rel="shortcut icon" href="/proyek/favicon.ico" type="image/x-icon">
+<link rel="shortcut icon" href="/proyek/assets/logo512.png" type="image/x-icon">
 <link rel="icon" href="/proyek/favicon.ico" type="image/x-icon">
 <link rel="stylesheet" type="text/css" href="/proyek/ext-3.4.1/resources/css/ext-all.css">
 <!-- <link rel="stylesheet" type="text/css" href="/proyek/css/ext-all.css"> -->
