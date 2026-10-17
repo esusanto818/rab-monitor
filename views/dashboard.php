@@ -294,7 +294,10 @@ $currentPage =$_GET['page'] ?? 'dashboard';
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-3 border-b border-[#0a2d4a] mb-3 gap-2">
                         <div>
                             <h2 class="text-base font-bold text-cyan-400 uppercase tracking-wider font-rajdhani">Rate Kurs Pajak (KMK)</h2>
-                            <span id="kmk_badge" class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded inline-block mt-1">Memuat...</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span id="kmk_badge" class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded inline-block">Memuat...</span>
+                                <span id="kmk_valid_date" class="text-[11px] text-yellow-400"></span>
+                            </div>
                         </div>
                         <div class="flex items-center space-x-2 w-full sm:w-auto">
                             <div class="relative flex-1 sm:w-44">
@@ -482,6 +485,7 @@ $currentPage =$_GET['page'] ?? 'dashboard';
 
         async function loadTaxRates() {
             const badge = document.getElementById('kmk_badge');
+            const validDateEl = document.getElementById('kmk_valid_date');
             
             try {
                 const res = await fetch(`${API_ENDPOINT}?action=read_tax_rates`);
@@ -489,6 +493,15 @@ $currentPage =$_GET['page'] ?? 'dashboard';
 
                 if (json.success) {
                     badge.innerText = json.kmk_number !== '-' ? `KMK: ${json.kmk_number}` : 'Kosong';
+                    
+                    if (json.start_date && json.end_date) {
+                        validDateEl.innerText = `(${json.start_date} s/d ${json.end_date})`;
+                    } else if (json.valid_date) {
+                        validDateEl.innerText = `(${json.valid_date})`;
+                    } else {
+                        validDateEl.innerText = '';
+                    }
+
                     globalTaxRates = json.rates || [];
                     filterTaxRates();
                 }

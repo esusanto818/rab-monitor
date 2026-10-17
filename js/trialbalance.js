@@ -37,6 +37,14 @@ Ext.onReady(function () {
         { name: 'debit', type: 'float' }, { name: 'credit', type: 'float' }
     ];
 
+    // [DEFAULT-PERIOD][NEW] Periode default = periode yang memuat tanggal hari ini; bila tidak ada -> periode terbaru (baris pertama)
+    function pickDefaultPeriod(store) {
+        var d = new Date(), m = d.getMonth() + 1, day = d.getDate();
+        var today = d.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (day < 10 ? '0' + day : day);
+        var idx = store.findBy(function (r) { return r.get('start_date') <= today && today <= r.get('end_date'); });
+        return store.getAt(idx >= 0 ? idx : 0).get('id');
+    }
+
     var periodField = [{ name: 'id' }, { name: 'period_name' }, { name: 'start_date' }, { name: 'end_date' }];
     var periodDs = new Ext.data.Store({
         url: '../php-crud/trialbalanceCRD.php',
@@ -44,9 +52,9 @@ Ext.onReady(function () {
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, periodField),
         listeners: {
             load: function (store) {
-                // Auto-pilih periode terbaru (baris pertama, karena ORDER BY start_date DESC)
+                // [DEFAULT-PERIOD] Auto-pilih periode yang memuat hari ini (bila tidak ada: periode terbaru)
                 if (store.getCount() > 0 && !fldPeriod.getValue()) {
-                    fldPeriod.setValue(store.getAt(0).get('id'));
+                    fldPeriod.setValue(pickDefaultPeriod(store));
                     loadTrialBalance();
                 }
             }

@@ -42,20 +42,32 @@ switch ($task) {
             exit;
         }
 
+        // [YTD] Awal tahun berjalan = 1 Januari tahun akhir periode (bila periode mulai sebelum itu, pakai awal periode)
+        $ytdStart = date('Y', strtotime($period['end_date'])) . '-01-01';
+        if ($period['start_date'] < $ytdStart) { $ytdStart = $period['start_date']; }
+
         $sql = "
             SELECT c.id, c.account_code, c.account_name, c.account_type,
+                   -- [YTD] amount = mutasi DALAM periode; amount_cum = tahun berjalan (YTD): 1 Jan tahun periode s/d akhir periode
+                   COALESCE(SUM(
+                       CASE WHEN j.id IS NOT NULL AND j.journal_date BETWEEN :start_date AND :end_date THEN
+                           CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
+                                WHEN c.account_type = 'expense' THEN l.debit - l.credit
+                                ELSE 0 END
+                       ELSE 0 END
+                   ), 0) AS amount,
                    COALESCE(SUM(
                        CASE WHEN j.id IS NOT NULL THEN
                            CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
                                 WHEN c.account_type = 'expense' THEN l.debit - l.credit
                                 ELSE 0 END
                        ELSE 0 END
-                   ), 0) AS amount
+                   ), 0) AS amount_cum
             FROM chart_of_accounts c
             LEFT JOIN journal_lines l ON l.account_id = c.id
             LEFT JOIN journal_entries j ON j.id = l.journal_id
                 AND j.status IN ('posted', 'reversed')
-                AND j.journal_date BETWEEN :start_date AND :end_date
+                AND j.journal_date BETWEEN :ytd_start AND :cum_end
             WHERE c.is_active = true
               AND c.account_type IN ('revenue', 'expense')
             GROUP BY c.id, c.account_code, c.account_name, c.account_type
@@ -64,7 +76,9 @@ switch ($task) {
         $stmt = $db->prepare($sql);
         $stmt->execute([
             'start_date' => $period['start_date'],
-            'end_date'   => $period['end_date']
+            'end_date'   => $period['end_date'],
+            'ytd_start'  => $ytdStart,               // [YTD]
+            'cum_end'    => $period['end_date']      // [YTD] nama parameter dibedakan (PDO pgsql tidak mengizinkan nama yang sama dipakai dua kali)
         ]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -72,22 +86,28 @@ switch ($task) {
         $expenses = [];
         $totalRevenue = 0;
         $totalExpense = 0;
+        $totalRevenueCum = 0;      // [CUM]
+        $totalExpenseCum = 0;      // [CUM]
 
         foreach ($rows as $r) {
             $amount = floatval($r['amount']);
+            $amountCum = floatval($r['amount_cum']);      // [CUM]
             $item = [
                 'id'           => $r['id'],
                 'account_code' => $r['account_code'],
                 'account_name' => $r['account_name'],
-                'amount'       => $amount
+                'amount'       => $amount,
+                'amount_cum'   => $amountCum               // [CUM]
             ];
 
             if ($r['account_type'] === 'revenue') {
                 $revenues[] = $item;
                 $totalRevenue += $amount;
+                $totalRevenueCum += $amountCum;            // [CUM]
             } else if ($r['account_type'] === 'expense') {
                 $expenses[] = $item;
                 $totalExpense += $amount;
+                $totalExpenseCum += $amountCum;            // [CUM]
             }
         }
 
@@ -98,11 +118,16 @@ switch ($task) {
             'period_name'    => $period['period_name'],
             'start_date'     => $period['start_date'],
             'end_date'       => $period['end_date'],
+            'ytd_start'      => $ytdStart,      // [YTD]
             'revenues'       => $revenues,
             'expenses'       => $expenses,
             'total_revenue'  => $totalRevenue,
             'total_expense'  => $totalExpense,
-            'net_profit_loss'=> $netProfitLoss
+            'net_profit_loss'=> $netProfitLoss,
+            // [CUM] total kumulatif s/d akhir periode
+            'total_revenue_cum'   => $totalRevenueCum,
+            'total_expense_cum'   => $totalExpenseCum,
+            'net_profit_loss_cum' => $totalRevenueCum - $totalExpenseCum
         ]);
         break;
 

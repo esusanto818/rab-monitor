@@ -12,3 +12,6 @@ EOF
 - [ ] pembayaran termin | Target: 2026-10-13
 - [x] add modul project progress | Target: 2026-10-15 | Finish: 2026-10-15
 - [x] tambah modul project progress mobile untuk update progress di lapangan | Target: 2026-10-25 | Finish: 2026-10-15
+- [ ] stock transfer | Target: 2026-10-20
+- [ ] deposit customer/supplier | Target: 2026-10-22
+- [ ] payment to supplier | Target: 2026-10-24

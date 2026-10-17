@@ -56,6 +56,8 @@ function pr_open($docTitle, $heading, $lines = [], $status = '', $ok = true) {
     table.rpt tr.z td { background: #f1f1f1; }                         /* zebra, tetap terlihat saat cetak */
     table.rpt tr.tot td { font-weight: bold; border-top: 1px solid #000; background: #fff; }
     td.c { width: 70px; } td.r, th.r { text-align: right; white-space: nowrap; }
+    table.rpt th.r { text-align: right; }                               /* [ALIGN] 'table.rpt th' (rata kiri) lebih spesifik dari 'th.r' -> header kolom angka ikut rata kanan */
+    table.fx { table-layout: fixed; }                                   /* [ALIGN] lebar kolom tetap agar baris total/laba bersih sejajar dengan kolom di atasnya */
     .muted { color: #777; font-style: italic; }
     .grand { margin-top: 14px; padding: 8px 6px; border-top: 2px solid #000; border-bottom: 2px solid #000; font-size: 14px; font-weight: bold; display: flex; justify-content: space-between; }
     .jv { margin-top: 14px; page-break-inside: avoid; }
