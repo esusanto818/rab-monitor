@@ -1,5 +1,5 @@
 /*
-  Document      : journal.entry.js
+  Document      : m.journal.js
   Description   : Journal Entry (manual) - Header Grid + Detail View + Editor Form
   Backend       : /proyek/php-crud/journal.entryCRD.php
 */
@@ -133,6 +133,7 @@ Ext.onReady(function () {
             },
             { header: 'Status', dataIndex: 'status', width: 90, align: 'center', renderer: statusRenderer }
         ],
+        stripeRows: true,
         viewConfig: { forceFit: true },
         loadMask: true,
         listeners: {
@@ -155,6 +156,12 @@ Ext.onReady(function () {
     // ------------------------------------------------------------
     // 3. Detail View Renderer (Desain Seragam dengan GRN)
     // ------------------------------------------------------------
+    // [PRINT-JV][NEW] Cetak satu jurnal (per id) -- dipanggil dari tombol Print di panel detail
+    function printJournal(journalId) {
+        if (!journalId) return;
+        window.open('../pdf/journal.php?id=' + encodeURIComponent(journalId), '_blank', 'width=900,height=800,scrollbars=yes,resizable=yes');
+    }
+
     function loadJournalDetail(journalId, refNo) {
         Ext.Ajax.request({
             url: '../php-crud/journal.entryCRD.php',
@@ -167,7 +174,7 @@ Ext.onReady(function () {
                     journalDtlDiv.style.display = 'block';
                     return;
                 }
-                renderJournalDetailView(res.data || [], refNo);
+                renderJournalDetailView(res.data || [], refNo, journalId);     // [PRINT-JV] + journalId
             },
             failure: function() {
                 journalDtlDiv.innerHTML = '<div style="color:red;">Gagal terhubung ke server.</div>';
@@ -176,11 +183,20 @@ Ext.onReady(function () {
         });
     }
 
-    function renderJournalDetailView(rows, refNo) {
+    function renderJournalDetailView(rows, refNo, journalId) {     // [PRINT-JV] + journalId
         var fmtAmt = function (v) { return Ext.util.Format.number(v || 0, '0,000.00'); };
         var totalDebit = 0, totalCredit = 0;
 
-        var html = '<h3 class="detail-title">Detail Baris Jurnal: ' + Ext.util.Format.htmlEncode(refNo || '') + '</h3>' +
+        // [PRINT-JV][NEW] judul detail + tombol Print (cetak jurnal ini saja)
+        var html = '<div style="display:flex; justify-content:space-between; align-items:center;">' +
+                   '<h3 class="detail-title" style="margin:0;">Detail Baris Jurnal: ' + Ext.util.Format.htmlEncode(refNo || '') + '</h3>' +
+                   // [PRINT-JV] gaya disamakan dengan tombol toolbar utama: latar transparan, ikon & teks putih (bukan tombol abu-abu terang)
+                   '<button id="btnPrintJournalDtl" type="button" ' +
+                   'style="display:inline-flex; align-items:center; gap:6px; background:transparent; color:#ffffff; font-family:inherit; font-size:13px; ' +
+                   'border:1px solid rgba(255,255,255,0.35); border-radius:3px; padding:4px 14px; cursor:pointer;" ' +
+                   'onmouseover="this.style.background=\'rgba(255,255,255,0.12)\';" onmouseout="this.style.background=\'transparent\';">' +
+                   '<i class="material-icons md-22 white">print</i> Print</button>' +
+                   '</div>' +
                    '<hr class="detail-hr" />' +
                    '<table class="detail-table" width="100%" cellSpacing="0" cellPadding="0">' +
                    '<thead>' +
@@ -225,6 +241,9 @@ Ext.onReady(function () {
 
         journalDtlDiv.innerHTML = html;
         journalDtlDiv.style.display = 'block';
+
+        var btnPrint = document.getElementById('btnPrintJournalDtl');     // [PRINT-JV] dibuat ulang tiap render -> pasang handler di sini
+        if (btnPrint) btnPrint.onclick = function () { printJournal(journalId); };
     }
 
     function toggleEditViewButtons() {
@@ -478,10 +497,10 @@ Ext.onReady(function () {
     }
 
     document.getElementById('printData').onclick = function (event) {
-        // [PRINT-JV] Jurnal terpilih di grid -> cetak satu jurnal (?id=); belum ada yang dipilih -> cetak semua jurnal.
+        // [PRINT-JV] Tombol Printing utama = cetak SEMUA jurnal (tidak tergantung baris terpilih).
+        //            Cetak per jurnal memakai tombol Print di panel Detail Baris Jurnal (printJournal).
         //            Argumen fitur window.open dijadikan satu string (sebelumnya terpisah & diabaikan).
-        var url = '../pdf/journal.php' + (dataRecord && dataRecord.id ? '?id=' + encodeURIComponent(dataRecord.id) : '');
-        window.open(url, '_blank', 'width=900,height=800,scrollbars=yes,resizable=yes');
+        window.open('../pdf/journal.php', '_blank', 'width=900,height=800,scrollbars=yes,resizable=yes');
     };
 
     document.getElementById('saveEdit').onclick = function () {

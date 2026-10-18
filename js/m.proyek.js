@@ -119,6 +119,7 @@ Ext.onReady(function () {
             { header: 'Progress (%)', dataIndex: 'progress', width: 90, align: 'center', renderer: function(v){ return (v || 0) + '%'; } },
             { header: 'Status', dataIndex: 'status', width: 100, align: 'center' }
         ],
+        stripeRows : true,
         viewConfig: { forceFit: true },
         loadMask: true,
         listeners: {

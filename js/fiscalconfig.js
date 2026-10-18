@@ -73,6 +73,7 @@ Ext.onReady(function () {
                 renderer: function (v) { return v ? '<span style="color:#2e9e4f;font-weight:bold;">Aktif</span>' : '<span style="color:#c0392b !important;font-weight:bold;">Nonaktif</span>'; }
             }
         ],
+        stripeRows: true,
         viewConfig: { forceFit: true },
         loadMask: true,
         listeners: {

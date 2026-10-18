@@ -59,7 +59,7 @@ $currentPage =$_GET['page'] ?? 'dashboard';
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@500;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #020b14; color: #e2e8f0; }
+        body { font-family: 'Inter', sans-serif; background-color: #000000; color: #e2e8f0; }
         .font-orbitron { font-family: 'Orbitron', sans-serif; }
         .font-rajdhani { font-family: 'Rajdhani', sans-serif; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -82,15 +82,15 @@ $currentPage =$_GET['page'] ?? 'dashboard';
 <body class="min-h-screen flex flex-col bg-[#020b14]">
 
     <!-- TOP NAVIGATION BAR DENGAN MAIN MENU DINAMIS -->
-    <header class="bg-[#04101c] border-b border-[#0a2d4a] sticky top-0 z-50 shadow-lg">
+    <header class="bg-[#000000] border-b border-[#0a2d4a] sticky top-0 z-50 shadow-lg">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-14">
                 
                 <!-- BRAND LOGO & MENU DINAMIS -->
                 <div class="flex items-center space-x-6">
                     <a href="dashboard.php" class="flex items-center space-x-3 group">
-                        <?php if (file_exists(__DIR__ . '/../assets/logo_c.png')): ?>
-                            <img src="../assets/logo_c.png" alt="Logo" class="h-8 w-auto object-contain">
+                        <?php if (file_exists(__DIR__ . '/../assets/new_logo1.png')): ?>
+                            <img src="../assets/new_logo1.png" alt="Logo" class="h-8 w-auto object-contain">
                         <?php else: ?>
                             <span class="font-orbitron text-xl font-bold text-cyan-400 tracking-wider group-hover:text-cyan-300 transition">IXYZSYS</span>
                             <span class="text-base px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/50">v2.6</span>
@@ -294,7 +294,10 @@ $currentPage =$_GET['page'] ?? 'dashboard';
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-3 border-b border-[#0a2d4a] mb-3 gap-2">
                         <div>
                             <h2 class="text-base font-bold text-cyan-400 uppercase tracking-wider font-rajdhani">Rate Kurs Pajak (KMK)</h2>
-                            <span id="kmk_badge" class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded inline-block mt-1">Memuat...</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span id="kmk_badge" class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded inline-block">Memuat...</span>
+                                <span id="kmk_valid_date" class="text-[11px] text-yellow-400"></span>
+                            </div>
                         </div>
                         <div class="flex items-center space-x-2 w-full sm:w-auto">
                             <div class="relative flex-1 sm:w-44">
@@ -482,6 +485,7 @@ $currentPage =$_GET['page'] ?? 'dashboard';
 
         async function loadTaxRates() {
             const badge = document.getElementById('kmk_badge');
+            const validDateEl = document.getElementById('kmk_valid_date');
             
             try {
                 const res = await fetch(`${API_ENDPOINT}?action=read_tax_rates`);
@@ -489,6 +493,15 @@ $currentPage =$_GET['page'] ?? 'dashboard';
 
                 if (json.success) {
                     badge.innerText = json.kmk_number !== '-' ? `KMK: ${json.kmk_number}` : 'Kosong';
+                    
+                    if (json.start_date && json.end_date) {
+                        validDateEl.innerText = `(${json.start_date} s/d ${json.end_date})`;
+                    } else if (json.valid_date) {
+                        validDateEl.innerText = `(${json.valid_date})`;
+                    } else {
+                        validDateEl.innerText = '';
+                    }
+
                     globalTaxRates = json.rates || [];
                     filterTaxRates();
                 }

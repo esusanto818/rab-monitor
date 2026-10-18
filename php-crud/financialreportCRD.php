@@ -110,23 +110,40 @@ switch ($task) {
         $equityTotal += $netIncomeCumulative;
 
         // LABA RUGI (Mutasi dalam periode terpilih)
+        // [YTD] Awal tahun berjalan = 1 Januari tahun akhir periode (bila periode mulai sebelum itu, pakai awal periode)
+        $ytdStart = date('Y', strtotime($endDate)) . '-01-01';
+        if ($startDate < $ytdStart) { $ytdStart = $startDate; }
+
+        // LABA RUGI: amount = mutasi DALAM periode; amount_cum = tahun berjalan (YTD) s/d akhir periode
         $sqlIS = "
             SELECT c.account_code, c.account_name, c.account_type,
+                   COALESCE(SUM(
+                       CASE WHEN j.id IS NOT NULL AND j.journal_date BETWEEN :start_date AND :end_date THEN
+                           CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
+                                ELSE l.debit - l.credit END
+                       ELSE 0 END
+                   ), 0) AS amount,
                    COALESCE(SUM(
                        CASE WHEN j.id IS NOT NULL THEN
                            CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
                                 ELSE l.debit - l.credit END
                        ELSE 0 END
-                   ), 0) AS amount
+                   ), 0) AS amount_cum
             FROM chart_of_accounts c
             LEFT JOIN journal_lines l ON l.account_id = c.id
             LEFT JOIN journal_entries j ON j.id = l.journal_id
                 AND j.status IN ('posted', 'reversed')
-                AND j.journal_date BETWEEN :start_date AND :end_date
-            WHERE c.is_active = true 
+                AND j.journal_date BETWEEN :ytd_start AND :cum_end
+            WHERE c.is_active = true
               AND c.account_type IN ('revenue', 'expense')
             GROUP BY c.id, c.account_code, c.account_name, c.account_type
             HAVING COALESCE(SUM(
+                CASE WHEN j.id IS NOT NULL AND j.journal_date BETWEEN :h_start AND :h_end THEN
+                    CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
+                         ELSE l.debit - l.credit END
+                ELSE 0 END
+            ), 0) != 0
+               OR COALESCE(SUM(
                 CASE WHEN j.id IS NOT NULL THEN
                     CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
                          ELSE l.debit - l.credit END
@@ -135,23 +152,28 @@ switch ($task) {
             ORDER BY c.account_code ASC
         ";
         $stmtIS = $db->prepare($sqlIS);
-        $stmtIS->execute(['start_date' => $startDate, 'end_date' => $endDate]);
+        // [YTD] nama parameter dibedakan (PDO pgsql tidak mengizinkan nama yang sama dipakai dua kali)
+        $stmtIS->execute(['start_date' => $startDate, 'end_date' => $endDate, 'ytd_start' => $ytdStart, 'cum_end' => $endDate,
+                          'h_start' => $startDate, 'h_end' => $endDate]);
         $isRows = $stmtIS->fetchAll(PDO::FETCH_ASSOC);
 
         $revenue = []; $expense = [];
         $revenueTotal = 0; $expenseTotal = 0;
+        $revenueTotalYtd = 0; $expenseTotalYtd = 0;      // [YTD]
         foreach ($isRows as $r) {
             $amt = floatval($r['amount']);
-            $item = ['account_code' => $r['account_code'], 'account_name' => $r['account_name'], 'amount' => $amt];
-            if ($r['account_type'] === 'revenue') { 
-                $revenue[] = $item; 
-                $revenueTotal += $amt; 
-            } else if ($r['account_type'] === 'expense')  { 
-                $expense[] = $item; 
-                $expenseTotal += $amt; 
+            $amtYtd = floatval($r['amount_cum']);          // [YTD]
+            $item = ['account_code' => $r['account_code'], 'account_name' => $r['account_name'], 'amount' => $amt, 'amount_ytd' => $amtYtd];
+            if ($r['account_type'] === 'revenue') {
+                $revenue[] = $item;
+                $revenueTotal += $amt; $revenueTotalYtd += $amtYtd;
+            } else if ($r['account_type'] === 'expense')  {
+                $expense[] = $item;
+                $expenseTotal += $amt; $expenseTotalYtd += $amtYtd;
             }
         }
         $netIncomePeriod = $revenueTotal - $expenseTotal;
+        $netIncomeYtd = $revenueTotalYtd - $expenseTotalYtd;      // [YTD]
 
         echo json_encode([
             'success'     => true,
@@ -167,7 +189,11 @@ switch ($task) {
             'income_statement' => [
                 'revenue' => $revenue, 'expense' => $expense,
                 'revenue_total' => $revenueTotal, 'expense_total' => $expenseTotal,
-                'net_income_period' => $netIncomePeriod
+                'net_income_period' => $netIncomePeriod,
+                // [YTD] tahun berjalan (1 Jan s/d akhir periode)
+                'ytd_start' => $ytdStart,
+                'revenue_total_ytd' => $revenueTotalYtd, 'expense_total_ytd' => $expenseTotalYtd,
+                'net_income_ytd' => $netIncomeYtd
             ]
         ]);
         break;

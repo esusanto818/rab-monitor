@@ -58,7 +58,7 @@ body .x-grid3-row,
 body .x-grid3-row td,
 body .x-grid3-cell,
 body .x-grid3-cell-inner {
-    background-color: #020c1b !important;   /* Dark Blue Match Page Base */
+    background-color: #020c1b ;   /* Dark Blue Match Page Base */
     background-image: none !important;
     color: #89b3d9 !important;
     border-top: none !important;
@@ -72,7 +72,7 @@ body .x-grid3-cell-inner {
 body .x-grid3-row-alt,
 body .x-grid3-row-alt td,
 body .x-grid3-row-alt .x-grid3-cell-inner {
-    background-color: #041224 !important;   /* Soft Dark Blue Zebra */
+    background-color: #ffffff10 !important;   /* Dark-blue zebra stripe */
 }
 
 /* 4. Hover Condition (Tanpa Box Border, Murni Accent Dark Blue) */
@@ -80,7 +80,7 @@ body .x-grid3-row-over,
 body .x-grid3-row-over td,
 body .x-grid3-row-over .x-grid3-cell,
 body .x-grid3-row-over .x-grid3-cell-inner {
-    background-color: #082138 !important;
+    background-color: #082138 ;
     background-image: none !important;
     color: #38bdf8 !important;
     border-top: none !important;
@@ -95,7 +95,7 @@ body .x-grid3-row-selected,
 body .x-grid3-row-selected td,
 body .x-grid3-row-selected .x-grid3-cell,
 body .x-grid3-row-selected .x-grid3-cell-inner {
-    background-color: #0a2d4a !important;   /* Dark Blue Selection */
+    background-color: #0a2d4a ;   /* Dark Blue Selection */
     background-image: none !important;
     color: #ffffff !important;
     border-top: none !important;
@@ -196,3 +196,4 @@ body .x-grid3-row-selected .x-grid3-cell-inner a {
     text-align: right !important;
     border-top: 1px dashed #1a3a52 !important;
 }
+

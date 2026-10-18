@@ -90,8 +90,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         <!-- Header / Logo Area -->
         <div class="text-center mb-8">
-            <div class="inline-flex items-center justify-center p-2 rounded-2xl bg-[#071319]/90 border border-gold-500/40 mb-4 shadow-inner">
-                <img src="assets/logo_.jpeg" alt="System Logo" class="w-24 h-28 object-contain rounded-xl">
+            <div class="inline-flex items-center justify-center p-2 rounded-2xl bg-[#000000]/90 border border-gold-500/40 mb-4 shadow-inner">
+                <img src="assets/new_logo1.png" alt="System Logo" class="w-24 h-28 object-contain rounded-xl">
             </div>
             <h1 class="text-2xl font-bold font-gold text-gold-400 tracking-wider">[XYZ]</h1>
             <p class="text-xs text-slate-300 uppercase tracking-widest mt-1">Material & Budget Monitoring</p>

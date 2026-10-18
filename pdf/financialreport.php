@@ -1,8 +1,9 @@
 <?php
 /*
   Document      : pdf/financialreport.php   [PRINT][NEW]
-  Description   : Cetak Financial Report = Neraca (kumulatif s/d akhir periode) + Laba Rugi (mutasi periode).
-                  Rumus = php-crud/financialreportCRD.php. Akun bersaldo nol disembunyikan.
+  Description   : Cetak Financial Report = Neraca (kumulatif s/d akhir periode) + Laba Rugi (kolom "Periode Ini" dan
+                  "Tahun Berjalan (YTD)" = 1 Januari tahun periode s/d akhir periode).
+                  Rumus = php-crud/financialreportCRD.php. Akun yang semua kolomnya nol disembunyikan.
   Parameter     : period_id (wajib)
 */
 require_once __DIR__ . '/print.common.php';
@@ -59,26 +60,50 @@ $balanced = abs($tA - ($tL + $tQ)) < 0.01;
 $st = $db->prepare("
     SELECT c.account_code, c.account_name, c.account_type,
            COALESCE(SUM(
+               CASE WHEN j.id IS NOT NULL AND j.journal_date BETWEEN :s AND :e THEN
+                   CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
+                        ELSE l.debit - l.credit END
+               ELSE 0 END
+           ), 0) AS amount,
+           COALESCE(SUM(
                CASE WHEN j.id IS NOT NULL THEN
                    CASE WHEN c.account_type = 'revenue' THEN l.credit - l.debit
                         ELSE l.debit - l.credit END
                ELSE 0 END
-           ), 0) AS amount
+           ), 0) AS amount_cum
       FROM chart_of_accounts c
       LEFT JOIN journal_lines l ON l.account_id = c.id
       LEFT JOIN journal_entries j ON j.id = l.journal_id
-           AND j.status IN ('posted', 'reversed') AND j.journal_date BETWEEN :s AND :e
+           AND j.status IN ('posted', 'reversed') AND j.journal_date BETWEEN :ys AND :ce
+           AND j.reference_type::text <> 'closing_entry'   -- [CLOSING] jurnal penutup tidak ikut dihitung di Laba Rugi
      WHERE c.is_active = true AND c.account_type IN ('revenue', 'expense')
      GROUP BY c.id, c.account_code, c.account_name, c.account_type
      ORDER BY c.account_code ASC");
-$st->execute(['s' => $s, 'e' => $e]);
-$R = []; $X = []; $tR = 0.0; $tX = 0.0;
+// [YTD] awal tahun berjalan = 1 Januari tahun akhir periode (bila periode mulai sebelum itu, pakai awal periode)
+$ytdStart = date('Y', strtotime($e)) . '-01-01';
+if ($s < $ytdStart) { $ytdStart = $s; }
+$st->execute(['s' => $s, 'e' => $e, 'ys' => $ytdStart, 'ce' => $e]);
+$R = []; $X = []; $tR = 0.0; $tX = 0.0; $tRc = 0.0; $tXc = 0.0;
 foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $a = floatval($r['amount']);
-    if ($r['account_type'] === 'revenue') { $tR += $a; if (abs($a) > 0.004) $R[] = [$r['account_code'], $r['account_name'], $a]; }
-    else                                  { $tX += $a; if (abs($a) > 0.004) $X[] = [$r['account_code'], $r['account_name'], $a]; }
+    $a = floatval($r['amount']); $c = floatval($r['amount_cum']);
+    $show = (abs($a) > 0.004 || abs($c) > 0.004);
+    if ($r['account_type'] === 'revenue') { $tR += $a; $tRc += $c; if ($show) $R[] = [$r['account_code'], $r['account_name'], $a, $c]; }
+    else                                  { $tX += $a; $tXc += $c; if ($show) $X[] = [$r['account_code'], $r['account_name'], $a, $c]; }
 }
-$netP = $tR - $tX;
+$netP = $tR - $tX; $netC = $tRc - $tXc;
+
+// [YTD] seksi laba rugi dua kolom nilai; lebar kolom tetap (colgroup) agar sejajar di semua seksi & baris laba bersih
+define('FR_COLS', '<colgroup><col style="width:70px"><col><col style="width:150px"><col style="width:170px"></colgroup>');
+function fr_is_section($title, $items, $totalLabel, $t, $tc) {
+    $h = '<h3>' . pr_e($title) . '</h3><table class="rpt fx">' . FR_COLS .
+         '<tr><th>Kode</th><th>Nama Akun</th><th class="r">Periode Ini</th><th class="r">Tahun Berjalan (YTD)</th></tr>';
+    $i = 0;
+    foreach ($items as $it) {
+        $h .= '<tr' . ($i++ % 2 ? ' class="z"' : '') . '><td class="c">' . pr_e($it[0]) . '</td><td>' . pr_e($it[1]) . '</td><td class="r">' . pr_n($it[2]) . '</td><td class="r">' . pr_n($it[3]) . '</td></tr>';
+    }
+    if (!count($items)) { $h .= '<tr><td colspan="4" class="muted">Tidak ada saldo.</td></tr>'; }
+    return $h . '<tr class="tot"><td colspan="2">' . pr_e($totalLabel) . '</td><td class="r">' . pr_n($t) . '</td><td class="r">' . pr_n($tc) . '</td></tr></table>';
+}
 
 pr_open('Financial Report - ' . $period['period_name'], 'FINANCIAL REPORT',
     ['Periode: ' . pr_e($period['period_name']) . ' (' . pr_e(pr_date($s)) . ' s/d ' . pr_e(pr_date($e)) . ')'],
@@ -92,10 +117,18 @@ echo pr_section('EKUITAS', $Q, 'TOTAL EKUITAS', $tQ);
 ?>
 <div class="grand"><span>TOTAL LIABILITAS &amp; EKUITAS</span><span><?php echo pr_n($tL + $tQ); ?></span></div>
 
-<h2 style="font-size:15px; margin:22px 0 0 0;">LAPORAN LABA RUGI (<?php echo pr_e(pr_date($s)); ?> s/d <?php echo pr_e(pr_date($e)); ?>)</h2>
+<h2 style="font-size:15px; margin:22px 0 0 0;">LAPORAN LABA RUGI (<?php echo pr_e(pr_date($s)); ?> s/d <?php echo pr_e(pr_date($e)); ?> | YTD: <?php echo pr_e(pr_date($ytdStart)); ?> s/d <?php echo pr_e(pr_date($e)); ?>)</h2>
 <?php
-echo pr_section('PENDAPATAN', $R, 'TOTAL PENDAPATAN', $tR);
-echo pr_section('BEBAN / BIAYA', $X, 'TOTAL BEBAN', $tX);
+echo fr_is_section('PENDAPATAN', $R, 'TOTAL PENDAPATAN', $tR, $tRc);
+echo fr_is_section('BEBAN / BIAYA', $X, 'TOTAL BEBAN', $tX, $tXc);
 ?>
-<div class="grand"><span><?php echo $netP >= 0 ? 'LABA BERSIH PERIODE' : 'RUGI BERSIH PERIODE'; ?></span><span><?php echo pr_n($netP); ?></span></div>
+<!-- [YTD] Laba bersih sebagai tabel dengan kolom sama (Periode Ini | YTD) -->
+<table class="rpt fx" style="margin-top:14px; border-top:2px solid #000; border-bottom:2px solid #000;">
+    <?php echo FR_COLS; ?>
+    <tr style="font-size:14px; font-weight:bold;">
+        <td colspan="2"><?php echo $netP >= 0 ? 'LABA BERSIH' : 'RUGI BERSIH'; ?></td>
+        <td class="r"><?php echo pr_n($netP); ?></td>
+        <td class="r"><?php echo pr_n($netC); ?></td>
+    </tr>
+</table>
 <?php pr_close(); ?>
