@@ -583,6 +583,7 @@ Ext.onReady(function () {
             { header: 'Status', dataIndex: 'status', width: 80, align: 'center',
               renderer: function (v) { return '<span style="color:' + statusColor(v) + ';font-weight:bold;">' + enc(v || '-') + '</span>'; } }
         ],
+        stripeRows : true,
         viewConfig: { forceFit: true },
         loadMask: true,
         listeners: {

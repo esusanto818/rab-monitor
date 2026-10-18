@@ -68,6 +68,7 @@ switch ($task) {
             LEFT JOIN journal_entries j ON j.id = l.journal_id
                 AND j.status IN ('posted', 'reversed')
                 AND j.journal_date BETWEEN :ytd_start AND :cum_end
+                AND j.reference_type::text <> 'closing_entry'      -- [CLOSING] jurnal penutup tahunan tidak ikut dihitung di Laba Rugi (supaya tahun yang ditutup tetap menampilkan pendapatan & beban)
             WHERE c.is_active = true
               AND c.account_type IN ('revenue', 'expense')
             GROUP BY c.id, c.account_code, c.account_name, c.account_type

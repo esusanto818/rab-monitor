@@ -3,6 +3,10 @@
 INSERT INTO m_employee (id, employee_name, gender, from_date, active) 
 VALUES (1, 'Administrator System', 'M', CURRENT_DATE, true)
 ON CONFLICT (id) DO NOTHING;
+--insert admin to it department;
+INSERT INTO employee_department (employee_id, department_id, from_date) 
+VALUES (1, ,1,CURRENT_DATE)
+ON CONFLICT (id) DO NOTHING;
 
 -- 2. Insert ke tabel m_user_system
 -- Catatan: Password '789' dienkripsikan menggunakan md5 atau format hash yang sesuai dengan validator login. 
@@ -12,7 +16,7 @@ VALUES (
     DEFAULT, 
     'admin', 
     1, -- Sesuaikan dengan id employee yang ada di tabel m_employee
-    'e034fb0ad392b45c29a278696e5b4c69', -- Contoh hash MD5 dari '789' (atau ganti dengan fungsi encode sistem)
+    '789', -- Contoh hash MD5 dari '789' (atau ganti dengan fungsi encode sistem)
     true
 );
 

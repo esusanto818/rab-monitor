@@ -13,7 +13,6 @@
 ?>
 </html>
     <head>
-      <link rel="stylesheet" type="text/css" href="../css/header.black.css" />
       <style>
         #editorWdw {height: auto !important; min-height: 420px !important; max-height: 85vh !important; overflow-y: auto !important;}
         #editorForm {top: 50%; width: 70%; height: auto !important; min-height: 380px !important; max-height: 80vh !important; overflow-y: auto !important;}
@@ -27,6 +26,11 @@
         #addFormHeaderMenu, #addFormHeaderSearch, #addFormHeaderText {width: 32%;}
       </style>
       <title id="page-title">Form Group</title>
+      <link rel="stylesheet" type="text/css" href="/proyek/ext-3.4.1/resources/css/ext-all.css" />
+      <link rel="stylesheet" type="text/css" href="/proyek/css/mainCSS.css" />
+      <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
+      <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+      <link rel="stylesheet" type="text/css" href="/proyek/css/frm.css" />
     </head>
     <body>
       <script type="text/javascript" src="../js-ext/ux/CheckColumn.js"></script>

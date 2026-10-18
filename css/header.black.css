@@ -5,7 +5,7 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1) !important;}
-#mainHeader { background: rgba(66, 0, 255, .3); }
+#mainHeader { background: rgba(0, 0, 0, 0.3); }
 #mainHeaderText { color: #fff; }
 
 #menuForm a:hover {background-color: rgba(0, 0, 0, .4);}
@@ -13,7 +13,7 @@ html, body {
 /*input[type="checkbox"]+label:before{background-color: #ebe6de;}
 input[type="radio"]+label:before{background:none ;}
 input[type="radio"]:checked+label:before{background:none;}*/
-#editorForm {background: #ebe6de;}
+#editorForm {background: #091a29;}
 #editorFormHeader, #addFormHeader, #uploadFormHeader, #prnFormHeader {background: transparent;}
 #editorFormMain, #addFormMain, #uploadFormMain, #prnFormMain {background: transparent;}
 .x-form-text, textarea.x-form-field {background-color: transparent;}
@@ -26,7 +26,7 @@ input[type="radio"]:checked+label:before{background:none;}*/
 
 .x-grid3-gridEditor .x-grid3-hd-row td, .x-grid3-gridEditor .x-grid3-header, .x-grid3-gridEditor .x-grid3-header-inner {background-color: #194a82 !important; color: #fff;}
 .x-grid3-gridEditor .x-grid3-hd-row td {border-left-color: transparent; border-right-color: transparent;}
-.x-grid3-gridEditor .x-grid3-row td { color: #000;}
+.x-grid3-gridEditor .x-grid3-row td { color: #e2e8f0;}
 .x-grid3-gridEditor .x-grid3-row-alt {background-color:rgba(143, 164, 177, 0.1);}
 .x-grid3-gridEditor .x-panel-bbar .x-toolbar, .x-grid3-gridEditor .x-panel-tbar .x-toolbar {background-color: #194a82;}
 .x-grid3-gridEditor .x-toolbar div.xtb-text {background-color: #194a82;}
@@ -35,22 +35,22 @@ input[type="radio"]:checked+label:before{background:none;}*/
 .x-grid3-gridAddItem .x-grid3-hd-row td, .x-grid3-gridAddItem .x-grid3-header-offset, .x-grid3-gridAddItem .x-grid3-header, .x-grid3-gridAddItem .x-grid3-header-inner {
   font-size: 13px !important;
   font-weight: 300;
-  background-image: none important;
+  background-image: none !important;
   background-color: #602b5e !important;
   color: #fff;
 }
 .x-grid3-hd-row td {border-left-color:rgba(0, 0, 0, .0); border-right-color: rgba(0, 0, 0, .0);}
 .x-grid3-gridAddItem .x-grid3-hd-row td {border: transparent;}
-.x-grid3-gridAddItem .x-grid3-row td { color: #000;}
+.x-grid3-gridAddItem .x-grid3-row td { color: #e2e8f0;}
 .x-grid3-gridAddItem .x-panel-bbar .x-toolbar, .x-grid3-gridAddItem .x-panel-tbar .x-toolbar {background-color: #602b5e;}
 .x-grid3-gridAddItem .x-toolbar div.xtb-text {background-color: #602b5e;}
 .x-grid3-gridAddItem .x-tbar-page-number {background-color: #602b5e !important;}
 .x-grid3-gridAddItem .x-grid3-col.x-grid3-cell {border-left: 1px solid transparent; border-right: 1px solid transparent; border-bottom: 1px solid transparent;}
 .x-grid3-gridAddItem .x-grid3-row-alt {background-color:rgba(143, 164, 177, 0.1);}
 
-.x-grid3-hd-row-user-2092ee .x-grid3-row td {color: #000;}
-.x-grid3-hd-row-user-48B66A .x-grid3-row td {color: #000;}
-.x-grid3-hd-row-user-FA9939 .x-grid3-row td {color: #000;}
+.x-grid3-hd-row-user-2092ee .x-grid3-row td {color: #e2e8f0;}
+.x-grid3-hd-row-user-48B66A .x-grid3-row td {color: #e2e8f0;}
+.x-grid3-hd-row-user-FA9939 .x-grid3-row td {color: #e2e8f0;}
 #divMainGrid {
   /*background-color: rgba(255, 0, 255, .3);*/
 }
@@ -61,64 +61,6 @@ input[type="radio"]:checked+label:before{background:none;}*/
   margin: 10 auto;*/
   /*background-color: rgba(0, 0, 255, .3);*/
 }
-::-webkit-scrollbar-thumb { background: rgb(0, 0, 0) !important;}
-#mainHeader { background: rgb(0, 0, 0); }
-#mainHeaderText { color: #fff; }
-
-#menuForm a:hover {background-color: rgba(0, 0, 0, .4);}
-/*#editorForm {background: #fff;}*/
-/*input[type="checkbox"]+label:before{background-color: #ebe6de;}
-input[type="radio"]+label:before{background:none ;}
-input[type="radio"]:checked+label:before{background:none;}*/
-#editorForm {background: #ebe6de;}
-#editorFormHeader, #addFormHeader, #uploadFormHeader, #prnFormHeader {background: transparent;}
-#editorFormMain, #addFormMain, #uploadFormMain, #prnFormMain {background: transparent;}
-.x-form-text, textarea.x-form-field {background-color: transparent;}
-/* .x-combo-list-item { border-color: #f6f6f6; background: #f6f6f6; } */
-.x-grid3-gridDetail .x-grid3-hd-row td, .x-grid3-gridDetail .x-grid3-header, .x-grid3-gridDetail .x-grid3-header-inner {background-color: rgba(0, 0, 0, .1) !important; color: #21ff00;}
-
-.x-grid3-gridDetail2 .x-grid3-hd-row td, .x-grid3-gridDetail2 .x-grid3-header, .x-grid3-gridDetail2 .x-grid3-header-inner {background-color: rgba(0, 0, 0, .1) !important; color: #00ffff;}
-
-.x-grid3-gridDetail1 .x-grid3-hd-row td, .x-grid3-gridDetail1 .x-grid3-header, .x-grid3-gridDetail1 .x-grid3-header-inner {background-color: rgba(0, 0, 0, .1) !important; color: #ffff00;}
-
-.x-grid3-gridEditor .x-grid3-hd-row td, .x-grid3-gridEditor .x-grid3-header, .x-grid3-gridEditor .x-grid3-header-inner {background-color: #194a82 !important; color: #fff;}
-.x-grid3-gridEditor .x-grid3-hd-row td {border-left-color: transparent; border-right-color: transparent;}
-.x-grid3-gridEditor .x-grid3-row td { color: #000;}
-.x-grid3-gridEditor .x-grid3-row-alt {background-color:rgba(143, 164, 177, 0.1);}
-.x-grid3-gridEditor .x-panel-bbar .x-toolbar, .x-grid3-gridEditor .x-panel-tbar .x-toolbar {background-color: #194a82;}
-.x-grid3-gridEditor .x-toolbar div.xtb-text {background-color: #194a82;}
-.x-grid3-gridEditor .x-tbar-page-number {background-color: #194a82 !important;}
-
-.x-grid3-gridAddItem .x-grid3-hd-row td, .x-grid3-gridAddItem .x-grid3-header-offset, .x-grid3-gridAddItem .x-grid3-header, .x-grid3-gridAddItem .x-grid3-header-inner {
-  font-size: 13px !important;
-  font-weight: 300;
-  background-image: none important;
-  background-color: #602b5e !important;
-  color: #fff;
-}
-.x-grid3-hd-row td {border-left-color:rgba(0, 0, 0, .0); border-right-color: rgba(0, 0, 0, .0);}
-.x-grid3-gridAddItem .x-grid3-hd-row td {border: transparent;}
-.x-grid3-gridAddItem .x-grid3-row td { color: #000;}
-.x-grid3-gridAddItem .x-panel-bbar .x-toolbar, .x-grid3-gridAddItem .x-panel-tbar .x-toolbar {background-color: #602b5e;}
-.x-grid3-gridAddItem .x-toolbar div.xtb-text {background-color: #602b5e;}
-.x-grid3-gridAddItem .x-tbar-page-number {background-color: #602b5e !important;}
-.x-grid3-gridAddItem .x-grid3-col.x-grid3-cell {border-left: 1px solid transparent; border-right: 1px solid transparent; border-bottom: 1px solid transparent;}
-.x-grid3-gridAddItem .x-grid3-row-alt {background-color:rgba(143, 164, 177, 0.1);}
-
-.x-grid3-hd-row-user-2092ee .x-grid3-row td {color: #000;}
-.x-grid3-hd-row-user-48B66A .x-grid3-row td {color: #000;}
-.x-grid3-hd-row-user-FA9939 .x-grid3-row td {color: #000;}
-#divMainGrid {
-  /*background-color: rgba(255, 0, 255, .3);*/
-}
-#divDetailGrid {
-  /*width: 98%;
-  height: 48%;
-  position: relative;
-  margin: 10 auto;*/
-  /*background-color: rgba(0, 0, 255, .3);*/
-}
-
 /* ============================================================
    FIX: Tombol OK/Yes/No/Cancel pada Ext.Msg.alert / Ext.Msg.confirm
    Sebelumnya tombol ini tidak ada override sama sekali, jadi masih

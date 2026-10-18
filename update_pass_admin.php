@@ -8,7 +8,7 @@ $db = new crud();
 
 try {
     $username = 'admin';
-    $new_password = 'admin789';
+    $new_password = '789';
 
     // Gunakan fungsi EncodeData() yang biasa dipakai aplikasi untuk enkripsi password (atau md5 jika sesuai sistem)
     $encrypted_password = function_exists('EncodeData') ? EncodeData($new_password) : md5($new_password);

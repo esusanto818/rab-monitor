@@ -14,12 +14,16 @@
 	<!DOCTYPE html>
 	<html>
 	  <head>
-    <link rel="stylesheet" type="text/css" href="../css/header.black.css" />
 		<style>
 			#editorForm {top: 50%; width: 95%; height: 90%;}
 			#addForm {top: 50%; width: 90%; height: 80%;}
 		</style>
 		<title id="page-title">User List</title>
+      <link rel="stylesheet" type="text/css" href="/proyek/ext-3.4.1/resources/css/ext-all.css" />
+      <link rel="stylesheet" type="text/css" href="/proyek/css/mainCSS.css" />
+      <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
+      p<link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+    <link rel="stylesheet" type="text/css" href="/proyek/css/frm.css" />
 	</head>
 	<body>
   <script type="text/javascript" src="../js-ext/ux/CheckColumn.js"></script>

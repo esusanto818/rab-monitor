@@ -15,6 +15,9 @@ function pr_boot() {
     require_once __DIR__ . '/../php-func/function.all.php';
     require_once __DIR__ . '/../php-class/crudClass.php';
     header('Content-Type: text/html; charset=utf-8');
+    // [NOCACHE] halaman cetak jangan di-cache browser/proxy (ngrok) agar selalu memakai versi file terbaru di server
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
     if (empty($_SESSION['user_id'])) {
         http_response_code(401);
         echo 'Sesi berakhir, silakan login kembali.';
@@ -36,7 +39,8 @@ function pr_period($db, $periodId) {
 function pr_date($d) { return $d ? date('d/m/Y', strtotime($d)) : '-'; }
 
 // Buka halaman: $lines = baris sub-judul, $status = teks status (opsional), $ok = warna status
-function pr_open($docTitle, $heading, $lines = [], $status = '', $ok = true) {
+// $extraCss (opsional) = CSS tambahan khusus halaman, mis. '@page { size: A4 landscape; }' untuk laporan lebar seperti General Ledger
+function pr_open($docTitle, $heading, $lines = [], $status = '', $ok = true, $extraCss = '') {
     ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -57,7 +61,9 @@ function pr_open($docTitle, $heading, $lines = [], $status = '', $ok = true) {
     table.rpt tr.tot td { font-weight: bold; border-top: 1px solid #000; background: #fff; }
     td.c { width: 70px; } td.r, th.r { text-align: right; white-space: nowrap; }
     table.rpt th.r { text-align: right; }                               /* [ALIGN] 'table.rpt th' (rata kiri) lebih spesifik dari 'th.r' -> header kolom angka ikut rata kanan */
-    table.fx { table-layout: fixed; }                                   /* [ALIGN] lebar kolom tetap agar baris total/laba bersih sejajar dengan kolom di atasnya */
+    table.fx { table-layout: fixed; }
+    table.rpt td.sec { font-size: 14px; font-weight: bold; border-bottom: 2px solid #000; padding: 16px 6px 3px 6px; background: #fff; }   /* [ALIGN] judul seksi sebagai baris tabel tunggal */
+    table.rpt tr.net td { font-size: 14px; font-weight: bold; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 8px 6px; background: #fff; }                                   /* [ALIGN] lebar kolom tetap agar baris total/laba bersih sejajar dengan kolom di atasnya */
     .muted { color: #777; font-style: italic; }
     .grand { margin-top: 14px; padding: 8px 6px; border-top: 2px solid #000; border-bottom: 2px solid #000; font-size: 14px; font-weight: bold; display: flex; justify-content: space-between; }
     .jv { margin-top: 14px; page-break-inside: avoid; }
@@ -67,6 +73,7 @@ function pr_open($docTitle, $heading, $lines = [], $status = '', $ok = true) {
     .noprint button { padding: 6px 14px; cursor: pointer; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     @media print { .noprint { display: none; } body { padding: 0; } }
+    <?php echo $extraCss; ?>
 </style>
 </head>
 <body>
