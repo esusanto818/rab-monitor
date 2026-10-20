@@ -122,8 +122,13 @@ input[type="radio"]:checked+label:before{background:none;}*/
 .x-window-dlg .x-btn-over .x-btn-mc {
   background-color: #4695e6 !important;
 }
+.grey-field-button .x-btn-mc {
+    background-color: #ffffff30;
+    border: 1px solid #ffffff !important;
+    border-radius: 15px;
+}
 .field-button .x-btn-mc {
-  padding: 8px 10px !important;
+  padding: 10px 30px !important;
 }
 x-grid3 {
     background-color: #1a3a52;

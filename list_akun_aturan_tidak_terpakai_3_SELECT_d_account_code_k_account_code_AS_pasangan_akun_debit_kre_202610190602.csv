@@ -1,0 +1,4 @@
+"pasangan_akun_debit_kredit","jumlah_aturan","aturan"
+"1500 / 2100",2,"PURCH_INVOICE, PURCHMAT"
+"2100 / 1500",2,"PURCH_RETURN, PUR_RETURN_INV"
+"2600 / 1500",2,"PUR_RETURN_GRN, RETURN_SUPPLIER"

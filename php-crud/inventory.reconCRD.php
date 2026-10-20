@@ -6,7 +6,7 @@
  * Pola sama dengan poCRD.php: PDO (class crud), dispatch lewat $_REQUEST['task'], respons JSON.
  * Logika perhitungan ada di php-func/function.inventory.recon.php (dipakai juga oleh pdf/inventoryrecon.php).
  *
- * Task: list_accounts | reconcile (as_of=YYYY-MM-DD, account_id)
+ * Task: list_accounts | reconcile (as_of=YYYY-MM-DD, account_id) | fix_missing_journals (as_of, account_id; akses >= 3)
  * ============================================================
  */
 
@@ -48,7 +48,20 @@ try {
         case 'reconcile':
             $asOf = (string)($_REQUEST['as_of'] ?? date('Y-m-d'));
             $accId = (int)($_REQUEST['account_id'] ?? 0);
-            sendJsonResponse(true, ir_reconcile($db, $asOf, $accId));
+            $res = ir_reconcile($db, $asOf, $accId);
+            unset($res['fixes']);          // daftar internal untuk perbaikan, tidak perlu dikirim ke klien
+            sendJsonResponse(true, $res);
+            break;
+
+        /* [PERBAIKAN] satu tombol: posting jurnal yang kurang untuk dokumen stok yang belum berjurnal */
+        case 'fix_missing_journals':
+            if (intval($_SESSION['FormAccess'] ?? 0) < 3) sendJsonResponse(false, [], 'Anda tidak memiliki hak akses untuk memproses perbaikan.');
+            $asOf = (string)($_POST['as_of'] ?? date('Y-m-d'));
+            $accId = (int)($_POST['account_id'] ?? 0);
+            $fx = ir_fix_missing($db, $asOf, $accId);
+            sendJsonResponse(true, $fx, $fx['count'] > 0
+                ? ($fx['count'] . ' jurnal diposting untuk: ' . implode(', ', $fx['posted']) . '.')
+                : 'Tidak ada jurnal yang perlu diposting.');
             break;
 
         default:

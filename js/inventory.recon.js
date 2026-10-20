@@ -4,6 +4,8 @@
                   dengan nilai STOK (ledger stock_movements, IN - OUT bernilai FIFO) sampai tanggal tertentu.
                   Ringkasan: nilai buku, nilai stok, selisih, bagian selisih yang dijelaskan dokumen bermasalah, sisa.
                   Tab: Per Item | Per Gudang | Dokumen vs Jurnal (status OK / TIDAK ADA JURNAL / NILAI BEDA / N/A).
+                  [PERBAIKAN] Tombol "Proses Perbaikan Otomatis" memposting jurnal yang kurang untuk dokumen stok yang belum berjurnal.
+                  [TAB BESAR] Tab dibuat sendiri (tombol 18px) agar terbaca; teks ringkasan memakai bahasa sehari-hari.
                   Pola mengikuti trialbalance.js (filter bar + summary + grid) dan po.js.
   Backend       : /proyek/php-crud/inventory.reconCRD.php  (logika: php-func/function.inventory.recon.php)
 */
@@ -100,6 +102,7 @@ Ext.onReady(function () {
     });
     var fldOnlyIssue = new Ext.form.Checkbox({ boxLabel: 'Dokumen: hanya yang bermasalah', checked: false });
     var btnShow = new Ext.Button({ text: 'Tampilkan', cls: 'field-button grey-field-button' });
+    var btnFix = new Ext.Button({ text: 'Proses Perbaikan Otomatis', cls: 'field-button grey-field-button', hidden: true });    // tampil hanya bila ada yang bisa diperbaiki
 
     new Ext.Panel({
         renderTo: 'irFilterBar',
@@ -108,10 +111,11 @@ Ext.onReady(function () {
         bodyStyle: 'background:transparent; padding:8px 0;',
         defaults: { border: false, bodyStyle: 'background:transparent;' },
         items: [
-            { columnWidth: 0.22, layout: 'form', labelWidth: 75, items: fldDate },
-            { columnWidth: 0.36, layout: 'form', labelWidth: 110, items: fldAcc },
-            { columnWidth: 0.22, style: 'padding-top:6px;', items: fldOnlyIssue },
-            { columnWidth: 0.12, style: 'padding-top:2px;', items: btnShow }
+            { columnWidth: 0.19, layout: 'form', labelWidth: 75, items: fldDate },
+            { columnWidth: 0.30, layout: 'form', labelWidth: 110, items: fldAcc },
+            { columnWidth: 0.17, style: 'padding-top:6px;', items: fldOnlyIssue },
+            { columnWidth: 0.11, style: 'padding-top:2px;', items: btnShow },
+            { columnWidth: 0.23, style: 'padding-top:2px;', items: btnFix }
         ]
     });
 
@@ -159,28 +163,73 @@ Ext.onReady(function () {
         ]
     });
 
-    var tabs = new Ext.TabPanel({
-        renderTo: 'divMainGrid',
-        activeTab: 0,
-        deferredRender: false,
-        height: 300,
-        defaults: { layout: 'fit' },
-        items: [
-            { title: 'Per Item', items: itemGrid },
-            { title: 'Per Gudang', items: whGrid },
-            { title: 'Dokumen vs Jurnal', items: docGrid }
-        ]
+    // [TAB BESAR] Tab dibuat sendiri (bukan Ext.TabPanel): tombol 18px, kontras jelas, tidak bergantung sprite gambar tab Ext.
+    var tabNames = ['Per Item', 'Per Gudang', 'Dokumen vs Jurnal'];
+    var tabBar = document.createElement('div');
+    tabBar.id = 'irTabBar';
+    tabBar.style.cssText = 'display:flex; gap:8px; margin:0 0 8px 0;';
+    var panes = [];
+    var tabBtns = [];
+    var activeTab = 0;
+    var holder = document.createElement('div');
+    holder.id = 'irPanes';
+    gridContainer.appendChild(tabBar);
+    gridContainer.appendChild(holder);
+
+    // ukuran font isi tabel di area ini dinaikkan agar terbaca
+    var st = document.createElement('style');
+    st.innerHTML = '#irPanes .x-grid3-cell-inner { font-size:15px !important; } #irPanes .x-grid3-hd-inner { font-size:14px !important; }';
+    document.head.appendChild(st);
+
+    Ext.each(tabNames, function (name, i) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.innerHTML = name;
+        btn.onclick = function () { selectTab(i); };
+        tabBar.appendChild(btn);
+        tabBtns.push(btn);
+        var pane = document.createElement('div');
+        pane.id = 'irPane' + i;
+        holder.appendChild(pane);
+        panes.push(pane);
     });
 
-    // Tinggi tab = sisa tinggi layar di bawah posisinya (setelah filter bar & summary terisi)
+    function styleTabs() {
+        Ext.each(tabBtns, function (btn, i) {
+            var on = (i === activeTab);
+            btn.style.cssText = 'font-size:18px; font-weight:bold; font-family:inherit; padding:8px 24px; cursor:pointer; border-radius:10px; ' +
+                                'color:#ffffff; border:1px solid rgb(77, 255, 0); ' +
+                                'background:' + (on ? '#00ff5530' : 'rgba(255,255,255,0.06)') + ';';
+        });
+    }
+
+    var gridsReady = false;
+    function buildGrids() {
+        itemGrid.render('irPane0'); whGrid.render('irPane1'); docGrid.render('irPane2');
+        gridsReady = true;
+    }
+
+    function selectTab(i) {
+        activeTab = i;
+        Ext.each(panes, function (pane, k) { pane.style.display = (k === i) ? 'block' : 'none'; });
+        styleTabs();
+        fitTabs();
+    }
+
+    // Tinggi grid aktif = sisa tinggi layar di bawah tab (setelah filter bar & ringkasan terisi)
     function fitTabs() {
-        if (!tabs.rendered) return;
-        var top = gridContainer.getBoundingClientRect().top;
+        if (!gridsReady) return;
+        var top = panes[activeTab].getBoundingClientRect().top;
         var h = (window.innerHeight || document.documentElement.clientHeight) - top - 24;
-        tabs.setHeight(Math.max(h, 240));
-        tabs.doLayout();
+        var g = [itemGrid, whGrid, docGrid][activeTab];
+        g.setHeight(Math.max(h, 240));
+        g.setWidth(panes[activeTab].clientWidth || 800);
+        g.doLayout();
     }
     window.onresize = fitTabs;
+
+    buildGrids();
+    selectTab(0);
 
     function applyDocFilter() {
         if (fldOnlyIssue.getValue()) {
@@ -214,31 +263,71 @@ Ext.onReady(function () {
 
                 var ok = (s.status === 'SESUAI');
                 var cell = function (label, val, color) {
-                    return '<td style="padding:4px 16px 4px 0;"><div style="color:#9fc3d1; font-size:12px;">' + label + '</div>' +
-                           '<div style="font-size:18px; font-weight:bold; color:' + (color || '#ffffff') + ';">' + fmtAmt(val) + '</div></td>';
+                    return '<td style="padding:4px 22px 4px 0;"><div style="color:#9fc3d1; font-size:13px;">' + label + '</div>' +
+                           '<div style="font-size:20px; font-weight:bold; color:' + (color || '#ffffff') + ';">' + fmtAmt(val) + '</div></td>';
                 };
-                var html = '<div style="margin-bottom:6px;">Per <b>' + enc(s.as_of) + '</b> &nbsp;|&nbsp; Akun: <b>' + enc(s.account_label) + '</b> &nbsp;|&nbsp; ' +
-                           '<b style="color:' + (ok ? '#4ade80' : '#f87171') + ';">' + (ok ? 'SESUAI ✓' : 'SELISIH ✗') + '</b></div>' +
+                var html = '<div style="margin-bottom:6px; font-size:15px;">Per <b>' + enc(s.as_of) + '</b> &nbsp;|&nbsp; Akun: <b>' + enc(s.account_label) + '</b> &nbsp;|&nbsp; ' +
+                           '<b style="color:' + (ok ? '#4ade80' : '#f87171') + ';">' + (ok ? 'SESUAI ✓' : 'ADA SELISIH ✗') + '</b></div>' +
                            '<table style="border-collapse:collapse;"><tr>' +
-                           cell('Nilai Buku (akun persediaan)', s.book_balance) +
-                           cell('Nilai Stok (stock_movements)', s.stock_value) +
+                           cell('Nilai Buku (angka di pembukuan)', s.book_balance) +
+                           cell('Nilai Stok (barang di gudang)', s.stock_value) +
                            cell('Selisih (Buku - Stok)', s.diff, ok ? '#4ade80' : '#f87171') +
-                           cell('Dijelaskan dokumen bermasalah', s.explained, '#e6a817') +
-                           cell('Tidak terjelaskan', s.unexplained, Math.abs(s.unexplained) <= 1 ? '#4ade80' : '#f87171') +
                            '</tr></table>';
-                if (!ok) {
-                    html += '<div style="margin-top:6px; color:#e6a817;">' + s.docs_problem + ' dari ' + s.docs_total +
-                            ' dokumen stok bermasalah (lihat tab "Dokumen vs Jurnal").' +
-                            (Math.abs(s.unexplained) > 1 ? ' Sisa selisih yang tidak terjelaskan biasanya jurnal manual / penyesuaian langsung di akun persediaan.' : '') + '</div>';
+
+                // penjelasan bahasa sehari-hari + langkah yang harus dilakukan
+                var fixCount = s.fixable_count || 0, otherProblem = Math.max((s.docs_problem || 0) - fixCount, 0);
+                var msg = [];
+                if (ok) {
+                    msg.push('<span style="color:#4ade80;">Pembukuan dan gudang sudah cocok. <b>Tidak ada yang perlu dilakukan.</b></span> (' + s.docs_total + ' dokumen stok diperiksa)');
                 } else {
-                    html += '<div style="margin-top:6px; color:#9fc3d1;">' + s.docs_total + ' dokumen stok diperiksa.</div>';
+                    if (fixCount > 0) {
+                        msg.push('<b>' + fixCount + ' dokumen</b> (nilai ' + fmtAmt(s.fixable_value) + ') sudah mengubah stok di gudang tetapi <b>belum dicatat di pembukuan</b>. ' +
+                                 'Klik tombol <b>"Proses Perbaikan Otomatis"</b> di atas untuk mencatatnya. Stok tidak diubah.');
+                    }
+                    if (otherProblem > 0) {
+                        msg.push('<b>' + otherProblem + ' dokumen</b> nilainya berbeda antara pembukuan dan gudang. Ini tidak diperbaiki otomatis; mohon dicek oleh bagian akuntansi (lihat tab "Dokumen vs Jurnal").');
+                    }
+                    if (Math.abs(s.unexplained) > 1) {
+                        msg.push('Ada selisih <b>' + fmtAmt(s.unexplained) + '</b> yang <b>tidak bisa dijelaskan</b> oleh dokumen stok (kemungkinan catatan manual di pembukuan). ' +
+                                 'Ini perlu diperiksa manual oleh bagian akuntansi, jangan disamakan dengan tombol otomatis.');
+                    }
                 }
+                html += '<div style="margin-top:8px; font-size:14px; line-height:1.6;">' + msg.join('<br/>') + '</div>' +
+                        '<div style="margin-top:8px; color:#668894; font-size:12px;">Nilai Buku = jumlah persediaan menurut pembukuan. Nilai Stok = nilai barang yang ada di gudang menurut catatan stok. Keduanya seharusnya sama.</div>';
                 summaryDiv.innerHTML = html;
+
+                if (fixCount > 0) { btnFix.show(); } else { btnFix.hide(); }
+                fixInfo = { count: fixCount, value: s.fixable_value };
                 fitTabs();
             },
             failure: function () { summaryDiv.innerHTML = '<span style="color:#ffeb3b;">Gagal menghubungi server.</span>'; }
         });
     }
+
+    var fixInfo = { count: 0, value: 0 };
+
+    // [PERBAIKAN] Satu tombol: posting jurnal yang kurang (server menghitung ulang daftarnya; tidak ada angka dari klien)
+    btnFix.on('click', function () {
+        if (!fixInfo.count) return;
+        Ext.Msg.confirm('Proses Perbaikan Otomatis',
+            'Sistem akan mencatat <b>' + fixInfo.count + ' jurnal</b> (total nilai ' + fmtAmt(fixInfo.value) + ') untuk dokumen stok yang belum dicatat di pembukuan.' +
+            '<br/>Stok di gudang <b>tidak</b> diubah. Lanjutkan?',
+            function (btn) {
+                if (btn !== 'yes') return;
+                Ext.Ajax.request({
+                    url: CRD, method: 'POST',
+                    params: { task: 'fix_missing_journals', as_of: ymd(fldDate.getValue()), account_id: fldAcc.getValue() },
+                    success: function (response) {
+                        var res;
+                        try { res = Ext.util.JSON.decode(response.responseText); }
+                        catch (e) { showMsg('Gagal', 'Respons server tidak valid (cek error_log PHP).'); return; }
+                        showMsg(res.success ? 'Sukses' : 'Gagal', res.message || '');
+                        loadRecon();
+                    },
+                    failure: function () { showMsg('Gagal', 'Gagal menghubungi server.'); }
+                });
+            });
+    });
 
     btnShow.on('click', loadRecon);
     accDs.load();      // setelah akun terisi (default = akun kredit rule ISSUE_PROJECT), rekonsiliasi dimuat otomatis
