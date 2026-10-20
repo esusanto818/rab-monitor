@@ -10,9 +10,11 @@
 <html>
     <head>
         <title id="page-title">Deposit Monitoring</title>
-        <link rel="stylesheet" type="text/css" href="/proyek/ext/resources/css/ext-all.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/ext-3.4.1/resources/css/ext-all.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/mainCSS.css" />
         <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
-    </head>
+        <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+        <link rel="stylesheet" type="text/css" href="/proyek/css/frm.css" />
     <body>
     </body>
     <script type="text/javascript">

@@ -1,0 +1,36 @@
+kode,nama,tipe,status,baris_jurnal,jurnal_terakhir,dipakai_tabel_lain,dipakai_aturan_posting,induk
+1000,ASET,asset,aktif,0,,0,'-,induk
+1100,cash / bank,asset,aktif,0,,0,"CUSTSERV, PAY_ADV, PAY_AR, PAYMENT_AP, SLSCASH",induk
+1101,Kas Kasir / Operasional,cash,aktif,0,,0,"SUP_PAY_ADV, SUP_PAY_AP",
+1102,Kas Kecil (Petty Cash),cash,aktif,0,,0,'-,
+1103,Kas Utama / Brankas,cash,aktif,0,,0,'-,
+1111,Bank BCA (IDR),bank,aktif,0,,0,"PRJ_PAY_AR, PRJ_PAY_DEP",
+1113,Bank BNI (IDR),bank,aktif,0,,0,'-,
+1114,Bank BRI (IDR),bank,aktif,0,,0,'-,
+1300,Persediaan Barang Jadi,asset,nonaktif,0,,0,'-,
+1400,Uang Muka Pembelian,asset,aktif,0,,0,"SUP_PAY_ADV, SUP_PAY_DEP",
+1600,Peralatan & Perlengkapan Toko,asset,aktif,0,,0,'-,
+2000,LIABILITAS,liability,aktif,0,,0,'-,induk
+2100,Hutang Usaha,liability,aktif,0,,0,"PAYMENT_AP, PURCH_INVOICE, PURCHMAT, PURCH_RETURN, PUR_INVOICE, PUR_RETURN_INV, RETURN_CREDIT_NOTE, SUP_PAY_AP, SUP_PAY_DEP",
+2200,Uang Muka Penjualan / Kelebihan pembayaran,liability,aktif,0,,0,"PAY_ADV, PAY_FROM_DEP, PRJ_PAY_DEP, PROJECT_ADV",
+2300,PPN Keluaran,liability,aktif,0,,0,'-,
+2400,PPN Masukan,liability,aktif,0,,0,'-,
+2500,Utang Gaji,liability,aktif,0,,0,'-,
+3000,EKUITAS,equity,aktif,0,,0,'-,induk
+3100,Modal Pemilik,equity,aktif,0,,0,'-,
+3200,Laba Ditahan,equity,aktif,0,,0,'-,
+4000,PENDAPATAN,revenue,aktif,0,,0,'-,induk
+4100,Pendapatan Penjualan,revenue,aktif,0,,0,"SALES_RETURN_INV, SLSCASH, SLSCREDIT",
+4200,Pendapatan Jasa Custom/Repair,revenue,aktif,0,,0,CUSTSERV,
+5000,BEBAN,expense,aktif,0,,0,'-,induk
+5200,Beban Gaji & Tunjangan,expense,aktif,0,,0,'-,
+5300,Beban Sewa Toko,expense,aktif,0,,0,'-,
+5400,Beban Listrik & Air,expense,aktif,0,,0,'-,
+5500,Beban Penyusutan,expense,aktif,0,,0,'-,
+1112,Bank Mandiri (IDR),bank,aktif,1,2026-10-16,1,'-,
+1200,Piutang Usaha,asset,aktif,5,2026-10-16,0,"PAY_AR, PAY_FROM_DEP, PRJ_PAY_AR, PROJECT_INVOICE, PROJECT_PAYMENT, SALES_RETURN_INV, SLSCREDIT",
+1500,Persediaan Bahan Baku,asset,aktif,5,2026-10-17,0,"GRN_RCV, ISSUE_PROJECT, PURCH_INVOICE, PURCHMAT, PURCH_RETURN, PUR_RETURN_GRN, PUR_RETURN_INV, RETURN_SUPPLIER",
+1700,Pekerjaan Dalam Proses (WIP) Proyek,asset,aktif,2,2026-10-16,0,"ISSUE_PROJECT, WIP_RELEASE",
+2600,GRN Clearing Account,liability,aktif,4,2026-10-17,0,"GRN_RCV, PUR_INVOICE, PUR_RETURN_GRN, RETURN_CREDIT_NOTE, RETURN_SUPPLIER",
+4300,Pendapatan Proyek (Termin),revenue,aktif,4,2026-10-15,0,PROJECT_INVOICE,
+5100,Beban Pokok Penjualan,expense,aktif,1,2026-10-16,0,WIP_RELEASE,

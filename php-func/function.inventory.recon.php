@@ -27,12 +27,20 @@ function ir_default_account($db): int {
 }
 
 function ir_accounts($db): array {
+    // [AKUN] Hanya akun persediaan utama (akun kredit rule ISSUE_PROJECT, mis. 1500). Akun aset lain (WIP, Barang Jadi, Bank, dst.)
+    //        tidak memakai ledger stok sebagai pembanding, jadi tidak ditawarkan agar tidak salah pilih.
+    //        Bila rule belum diatur, tampilkan akun yang namanya memuat 'persediaan'.
     $def = ir_default_account($db);
-    $rows = $db->query("SELECT id, account_code, account_name FROM public.chart_of_accounts
-                         WHERE account_type::text IN ('asset', 'bank', 'cash') AND is_active = true ORDER BY account_code")->fetchAll(PDO::FETCH_ASSOC);
+    if ($def > 0) {
+        $st = $db->prepare("SELECT id, account_code, account_name FROM public.chart_of_accounts WHERE id = :id");
+        $st->execute([':id' => $def]);
+    } else {
+        $st = $db->query("SELECT id, account_code, account_name FROM public.chart_of_accounts
+                           WHERE account_name ILIKE '%persediaan%' AND is_active = true ORDER BY account_code");
+    }
     $out = [];
-    foreach ($rows as $r) {
-        $out[] = ['id' => (int)$r['id'], 'label' => $r['account_code'] . ' - ' . $r['account_name'], 'is_default' => ((int)$r['id'] === $def)];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $out[] = ['id' => (int)$r['id'], 'label' => $r['account_code'] . ' - ' . $r['account_name'], 'is_default' => ((int)$r['id'] === $def || $def <= 0)];
     }
     return $out;
 }
@@ -112,10 +120,13 @@ function ir_reconcile($db, string $asOf, int $accountId): array {
 
     $issueType = [];
     foreach ($db->query("SELECT id, issue_type FROM public.material_out_header")->fetchAll(PDO::FETCH_ASSOC) as $r) { $issueType[(int)$r['id']] = $r['issue_type']; }
-    $returByIssue = [];
-    foreach ($db->query("SELECT id, material_out_id FROM public.supplier_return_hdr WHERE material_out_id IS NOT NULL")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $returByIssue = []; $returRef = [];
+    foreach ($db->query("SELECT id, ref_no, material_out_id FROM public.supplier_return_hdr WHERE material_out_id IS NOT NULL")->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $returByIssue[(int)$r['material_out_id']] = (int)$r['id'];
+        $returRef[(int)$r['id']] = $r['ref_no'];
     }
+    // [PERBAIKAN] aturan posting untuk jurnal yang kurang: jenis jurnal -> rule fiscal_config
+    $fixRule = ['wh_receiving' => 'GRN_RCV', 'material_out' => 'ISSUE_PROJECT', 'supplier_return' => 'RETURN_SUPPLIER'];
 
     // jurnal asli (bukan 'Reverse of ...'), nilai = jumlah debit
     $st = $db->prepare("
@@ -139,6 +150,7 @@ function ir_reconcile($db, string $asOf, int $accountId): array {
     $st->execute([':d' => $asOf]);
 
     $docs = []; $explained = 0.0; $problemCount = 0;
+    $fixes = []; $fixValue = 0.0;     // [PERBAIKAN] dokumen yang jurnalnya bisa dibuat otomatis
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $val = round((float)$r['val'], 2);
         $rtype = strtolower((string)$r['reference_type']);
@@ -162,6 +174,15 @@ function ir_reconcile($db, string $asOf, int $accountId): array {
             if (!isset($jmap[$key])) {
                 $status = 'TIDAK ADA JURNAL';
                 $explained += -$val;
+                // dapat diperbaiki otomatis bila jenisnya dikenal dan arah nilainya sesuai (penerimaan = masuk, issue/retur = keluar)
+                if (isset($fixRule[$jt]) && (($jt === 'wh_receiving' && $val > 0) || ($jt !== 'wh_receiving' && $val < 0))) {
+                    $refNo = (string)$r['reference_no'];
+                    $desc = ($jt === 'wh_receiving') ? ('Penerimaan fisik gudang - ' . $refNo)
+                          : (($jt === 'material_out') ? ('Issue material ' . $refNo) : ('Retur supplier ' . (isset($returRef[$jid]) ? $returRef[$jid] : $refNo)));
+                    $fixes[] = ['rule' => $fixRule[$jt], 'ref_type' => $jt, 'ref_id' => $jid, 'date' => $r['doc_date'],
+                                'amount' => abs($val), 'desc' => $desc, 'label' => $refNo];
+                    $fixValue += abs($val);
+                }
             } else {
                 $jamt = round($jmap[$key], 2);
                 if (abs($jamt - abs($val)) <= IR_TOL) {
@@ -185,7 +206,43 @@ function ir_reconcile($db, string $asOf, int $accountId): array {
         'book_balance' => $book, 'stock_value' => $stock, 'diff' => $diff,
         'explained' => $explained, 'unexplained' => round($diff - $explained, 2),
         'docs_total' => count($docs), 'docs_problem' => $problemCount,
+        'fixable_count' => count($fixes), 'fixable_value' => round($fixValue, 2),
         'status' => (abs($diff) <= IR_TOL) ? 'SESUAI' : 'SELISIH',
     ];
-    return ['summary' => $summary, 'items' => $items, 'warehouses' => $warehouses, 'docs' => $docs];
+    return ['summary' => $summary, 'items' => $items, 'warehouses' => $warehouses, 'docs' => $docs, 'fixes' => $fixes];
+}
+
+/**
+ * [PERBAIKAN] Posting otomatis jurnal yang kurang (hanya dokumen berstatus TIDAK ADA JURNAL yang jenisnya dikenal):
+ *   penerimaan fisik gudang -> rule GRN_RCV | issue proyek -> ISSUE_PROJECT | retur supplier -> RETURN_SUPPLIER
+ * Nilai = nilai stok dokumen, tanggal = tanggal dokumen. Satu transaksi: gagal satu (mis. periode ditutup) = batal semua.
+ * Idempotent: dokumen yang sudah berjurnal tidak muncul lagi. Tidak menyentuh stok. NILAI BEDA dan selisih lain tidak diubah
+ * (butuh pemeriksaan manual agar kesalahan tidak tertutup).
+ */
+function ir_fix_missing($db, string $asOf, int $accountId): array {
+    $def = ir_default_account($db);
+    if ($accountId <= 0) $accountId = $def;
+    if ($def <= 0 || $accountId !== $def) {
+        throw new Exception('Perbaikan otomatis hanya untuk akun persediaan utama (akun kredit rule ISSUE_PROJECT di fiscal_config).');
+    }
+    $r = ir_reconcile($db, $asOf, $accountId);
+    if (!count($r['fixes'])) return ['posted' => [], 'count' => 0];
+
+    $posted = [];
+    $db->beginTransaction();
+    try {
+        foreach ($r['fixes'] as $f) {
+            $jr = AutoPostJournal($db, [
+                'rule_code' => $f['rule'], 'reference_type' => $f['ref_type'], 'reference_id' => (int)$f['ref_id'],
+                'journal_date' => $f['date'], 'amount' => $f['amount'], 'description' => $f['desc'],
+            ]);
+            if (!$jr['success']) throw new Exception($f['label'] . ': ' . $jr['message']);
+            $posted[] = $f['label'];
+        }
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) { $db->rollBack(); }
+        throw $e;
+    }
+    return ['posted' => $posted, 'count' => count($posted)];
 }
