@@ -2,10 +2,8 @@
 /**
  * m.proyekCRD.php
  * ============================================================
- * Backend Controller untuk Master Proyek (public.projects).
- * ##perbaikan tgl 13/10/2026 : Membersihkan pemisah ribuan koma (str_replace)
- *                           pada field angka (budget & contract_value) agar 
- *                           tersimpan utuh ke database PostgreSQL.
+ * Backend Controller untuk Master Proyek (public.projects)
+ * Beserta Integrasi AI Task Breakdown & Validasi Rentang Tanggal.
  * ============================================================
  */
 
@@ -65,7 +63,7 @@ try {
                            p.pic_id, e.employee_name AS pic_name,
                            p.location_id, loc.name AS location_name, p.location,
                            p.start_date, p.end_date, p.budget, p.contract_value, p.spent, p.progress,
-                           p.status, p.notes
+                           p.status, p.notes, p.project_scope
                     FROM projects p
                     LEFT JOIN clients c ON c.id = p.client_id
                     LEFT JOIN m_employee e ON e.id = p.pic_id
@@ -101,6 +99,138 @@ try {
                 "SELECT id, name FROM m_location ORDER BY name", [], 'read_locations')]);
             break;
 
+        case 'read_tasks':
+            $projectId = (int)($_REQUEST['project_id'] ?? 0);
+            $tasks = mpFetchAll($db, "SELECT * FROM public.project_tasks WHERE project_id = :pid ORDER BY start_date ASC", ['pid' => $projectId], 'read_tasks');
+            mpJson(['success' => true, 'data' => $tasks]);
+            break;
+
+        case 'ai_generate_tasks':
+            if ($access < 2) {
+                mpJson(['success' => false, 'message' => 'Akses ditolak.']);
+            }
+            $projectId = (int)($_REQUEST['project_id'] ?? 0);
+            if ($projectId <= 0) throw new Exception('ID Proyek tidak valid.');
+
+            $proj = mpFetchOne($db, "SELECT * FROM projects WHERE id = :id", ['id' => $projectId], 'ai_fetch_proj');
+            if (!$proj) throw new Exception('Proyek tidak ditemukan.');
+
+            $pName   = $proj['name'];
+            $pScope  = $proj['project_scope'] ?: 'Tidak ada spesifikasi khusus';
+            $pStart  = $proj['start_date'] ?: date('Y-m-d');
+            $pEnd    = $proj['end_date'] ?: date('Y-m-d', strtotime('+30 days'));
+            $pBudget = $proj['budget'];
+
+            $prompt = "
+                Anda adalah Construction Project Manager dan Expert Planner ahli. 
+                Tolong buatkan rincian Breakdown Struktur Pekerjaan (WBS) atau sub-task untuk proyek konstruksi berikut:
+                - Nama Proyek: {$pName}
+                - Definisi / Spesifikasi Proyek (Lingkup): {$pScope}
+                - Tanggal Mulai Proyek: {$pStart}
+                - Tanggal Selesai Proyek: {$pEnd}
+                - Total Budget: {$pBudget}
+
+                Aturan Ketat:
+                1. Sesuaikan sub-task dengan dimensi/spesifikasi pada Definisi Proyek (misal: pekerjaan pondasi, struktur, atap, atau luasan gudang/rumah tersebut).
+                2. Pecah proyek menjadi 5 hingga 9 sub-task logis.
+                3. Setiap sub-task HARUS memiliki rentang tanggal (start_date dan end_date) format YYYY-MM-DD.
+                4. Rentang tanggal sub-task harus berada di dalam atau tercover sepenuhnya di antara Tanggal Mulai ({$pStart}) dan Tanggal Selesai ({$pEnd}) proyek.
+                
+                Berikan respons dalam format JSON MURNI berupa array of objects tanpa markdown backtick tambahan:
+                [
+                  {
+                    \"task_name\": \"string\",
+                    \"description\": \"string\",
+                    \"start_date\": \"YYYY-MM-DD\",
+                    \"end_date\": \"YYYY-MM-DD\"
+                  }
+                ]
+            ";
+
+            $candidateModels = ['gemini-3.6-flash','gemini-3.5-flash-lite'];
+            $response = null; $httpCode = 0; $lastErrorMsg = '';
+
+            foreach ($candidateModels as $model) {
+                $apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent";
+                for ($attempt = 1; $attempt <= 2; $attempt++) {
+                    $ch = curl_init($apiUrl);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+                        'contents' => [['parts' => [['text' => $prompt]]]] ,
+                        'generationConfig' => ['responseMimeType' => 'application/json']
+                    ]));
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'x-goog-api-key: ' . $apiKey]);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+                    
+                    $response = curl_exec($ch);
+                    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    curl_close($ch);
+
+                    if ($httpCode === 200) break 2;
+                    $lastErrorMsg = "Model {$model} (HTTP {$httpCode}): " . $response;
+                    if ($httpCode === 503 || $httpCode === 429) sleep(1); else break;
+                }
+            }
+
+            if ($httpCode !== 200) {
+                throw new Exception("Gagal terhubung ke Gemini API: {$lastErrorMsg}");
+            }
+
+            $apiResult = json_decode($response, true);
+            $aiRawText = $apiResult['candidates'][0]['content']['parts'][0]['text'] ?? '[]';
+            $aiRawText = trim(str_replace(['```json', '```'], '', $aiRawText));
+            $tasks = json_decode($aiRawText, true);
+
+            if (!is_array($tasks) || empty($tasks)) {
+                throw new Exception('AI gagal menghasilkan format task yang valid.');
+            }
+
+            $db->beginTransaction();
+            try {
+                mpExec($db, "DELETE FROM public.project_tasks WHERE project_id = :pid", ['pid' => $projectId], 'del_old_tasks');
+                
+                $stIns = $db->prepare("
+                    INSERT INTO public.project_tasks (project_id, task_name, description, start_date, end_date, status)
+                    VALUES (:pid, :tname, :tdesc, :tsd, :ted, 'Belum Mulai')
+                ");
+
+                $covered = true;
+                $coverageNotes = [];
+
+                foreach ($tasks as $t) {
+                    $tName = $t['task_name'] ?? 'Pekerjaan';
+                    $tDesc = $t['description'] ?? '';
+                    $tStart = $t['start_date'] ?? $pStart;
+                    $tEnd = $t['end_date'] ?? $pEnd;
+
+                    if ($tStart < $pStart || $tEnd > $pEnd) {
+                        $covered = false;
+                        $coverageNotes[] = "Task '{$tName}' diluar rentang tanggal proyek!";
+                    }
+
+                    $stIns->execute([
+                        ':pid' => $projectId,
+                        ':tname' => $tName,
+                        ':tdesc' => $tDesc,
+                        ':tsd' => $tStart,
+                        ':ted' => $tEnd
+                    ]);
+                }
+
+                $db->commit();
+                mpJson([
+                    'success' => true, 
+                    'message' => 'Proyek berhasil dipecah oleh AI berdasarkan spesifikasi teknis!',
+                    'coverage_valid' => $covered,
+                    'notes' => $coverageNotes
+                ]);
+            } catch (Throwable $ex) {
+                if ($db->inTransaction()) $db->rollBack();
+                throw $ex;
+            }
+            break;
+
         case 'create':
         case 'update':
             if ($task === 'create' && $access < 2) {
@@ -119,8 +249,8 @@ try {
             $end_date       = ($_REQUEST['end_date'] ?? '') ?: null;
             $status         = $_REQUEST['status'] ?? 'Berjalan';
             $notes          = $_REQUEST['notes'] ?? '';
+            $project_scope  = $_REQUEST['project_scope'] ?? '';
 
-            // [PERBAIKAN] Bersihkan pemisah ribuan koma sebelum casting ke float
             $budget_raw     = $_REQUEST['budget'] ?? '';
             $cv_raw         = $_REQUEST['contract_value'] ?? '';
             
@@ -140,13 +270,13 @@ try {
             if ($task === 'create') {
                 $newId = (int)mpFetchOne($db,
                     "INSERT INTO projects
-                        (name, client_id, pic_id, location_id, start_date, end_date, budget, contract_value, progress, status, notes, created_at, updated_at)
-                     VALUES (:name, :cid, :pid, :lid, :sd, :ed, :budget, :cv, :progress, :status, :notes, NOW(), NOW())
+                        (name, client_id, pic_id, location_id, start_date, end_date, budget, contract_value, progress, status, notes, project_scope, created_at, updated_at)
+                     VALUES (:name, :cid, :pid, :lid, :sd, :ed, :budget, :cv, :progress, :status, :notes, :scope, NOW(), NOW())
                      RETURNING id",
                     ['name' => $name, 'cid' => $client_id, 'pid' => $pic_id, 'lid' => $location_id,
                      'sd' => $start_date, 'ed' => $end_date,
                      'budget' => $budget ?? 0, 'cv' => $contract_value ?? 0,
-                     'progress' => $progress ?? 0, 'status' => $status, 'notes' => $notes],
+                     'progress' => $progress ?? 0, 'status' => $status, 'notes' => $notes, 'scope' => $project_scope],
                     'insert projects')['id'];
                 mpJson(['success' => true, 'id' => $newId, 'message' => "Proyek '{$name}' berhasil ditambahkan."]);
             } else {
@@ -158,12 +288,12 @@ try {
                         budget = COALESCE(CAST(:budget AS numeric), budget),
                         contract_value = COALESCE(CAST(:cv AS numeric), contract_value),
                         progress = COALESCE(CAST(:progress AS smallint), progress),
-                        status = :status, notes = :notes, updated_at = NOW()
+                        status = :status, notes = :notes, project_scope = :scope, updated_at = NOW()
                      WHERE id = :id",
                     ['name' => $name, 'cid' => $client_id, 'pid' => $pic_id, 'lid' => $location_id,
                      'sd' => $start_date, 'ed' => $end_date,
                      'budget' => $budget, 'cv' => $contract_value, 'progress' => $progress,
-                     'status' => $status, 'notes' => $notes, 'id' => $id],
+                     'status' => $status, 'notes' => $notes, 'scope' => $project_scope, 'id' => $id],
                     'update projects');
                 mpJson(['success' => true, 'message' => "Proyek '{$name}' berhasil diperbarui."]);
             }

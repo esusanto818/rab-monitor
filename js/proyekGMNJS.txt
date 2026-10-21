@@ -4,7 +4,7 @@
 /*
   Document      : financial_balance_sheet.js
   Description   : Balance Sheet (Neraca Keuangan) - Read-only report
-  Backend       : /proyek/php-crud/balancesheetCRD.php
+  Backend       : /rab-project/php-crud/balancesheetCRD.php
 */
 
 Ext.onReady(function () {
@@ -194,7 +194,7 @@ Ext.onReady(function () {
   Document      : bin.location.js
   Description   : Master Bin Location (Lokasi Rak per Gudang) - WMS
                   Cascading Store & Filter Bin Location base on Warehouse
-  Backend       : /proyek/php-crud/bin.locationCRD.php
+  Backend       : /rab-project/php-crud/bin.locationCRD.php
 */
 
 Ext.onReady(function () {
@@ -243,7 +243,7 @@ Ext.onReady(function () {
 
     // Store Warehouse Master
     var warehouseDs = new Ext.data.Store({
-        url: '/proyek/php-crud/bin.locationCRD.php',
+        url: '/rab-project/php-crud/bin.locationCRD.php',
         baseParams: { task: 'read_warehouse' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, [{ name: 'id' }, { name: 'name' }])
     });
@@ -251,7 +251,7 @@ Ext.onReady(function () {
 
     // Store Bin Location Cascading (Filtered by Warehouse)
     var binByWarehouseDs = new Ext.data.Store({
-        url: '/proyek/php-crud/bin.locationCRD.php',
+        url: '/rab-project/php-crud/bin.locationCRD.php',
         baseParams: { task: 'read_bin_by_warehouse' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, [
             { name: 'id' }, { name: 'code' }, { name: 'name' }, { name: 'zone' }, { name: 'rack' }, { name: 'level' }
@@ -260,7 +260,7 @@ Ext.onReady(function () {
 
     // Main Store Grid
     var mainDs = new Ext.data.Store({
-        url: '/proyek/php-crud/bin.locationCRD.php',
+        url: '/rab-project/php-crud/bin.locationCRD.php',
         idProperty: 'id',
         baseParams: { task: 'read' },
         reader: new Ext.data.JsonReader({ root: 'data' }, binField)
@@ -322,7 +322,7 @@ Ext.onReady(function () {
     // ------------------------------------------------------------
     function loadBinDetail(binId, binCode, warehouseName) {
         Ext.Ajax.request({
-            url: '/proyek/php-crud/bin.locationCRD.php',
+            url: '/rab-project/php-crud/bin.locationCRD.php',
             method: 'POST',
             params: { task: 'read_bin_detail', bin_id: binId },
             success: function (response) {
@@ -512,7 +512,7 @@ Ext.onReady(function () {
                 Ext.Msg.confirm('Konfirmasi Hapus', "Hapus Bin Location '" + dataRecord.code + "'?", function (btn) {
                     if (btn === 'yes') {
                         Ext.Ajax.request({
-                            url: '/proyek/php-crud/bin.locationCRD.php',
+                            url: '/rab-project/php-crud/bin.locationCRD.php',
                             method: 'POST',
                             params: { task: 'delete', id: dataRecord.id },
                             success: function (response) {
@@ -550,7 +550,7 @@ Ext.onReady(function () {
             var currentId = (task === 'update' && dataRecord) ? dataRecord.id : null;
 
             Ext.Ajax.request({
-                url: '/proyek/php-crud/bin.locationCRD.php',
+                url: '/rab-project/php-crud/bin.locationCRD.php',
                 method: 'POST',
                 params: {
                     task: task,
@@ -590,7 +590,7 @@ Ext.onReady(function () {
   Document      : stock.transfer.js
   Description   : Stock Transfer (Pindah Stok Antar Gudang/Bin) - WMS
                   Perbaikan: Buang BBar, Detail View Panel di Bawah, Header Angka Rata Kanan.
-  Backend       : /proyek/php-crud/stock.transferCRD.php
+  Backend       : /rab-project/php-crud/stock.transferCRD.php
 */
 
 Ext.onReady(function () {
@@ -637,7 +637,7 @@ Ext.onReady(function () {
 
     function loadTransferDetail(transferId, transferNo) {
         Ext.Ajax.request({
-            url: '/proyek/php-crud/stock.transferCRD.php',
+            url: '/rab-project/php-crud/stock.transferCRD.php',
             method: 'POST',
             params: { task: 'read_detail_items', transfer_id: transferId },
             success: function (response) {
@@ -720,32 +720,32 @@ Ext.onReady(function () {
     var itemComboField = [{ name: 'id' }, { name: 'name' }];
 
     var warehouseDs = new Ext.data.Store({
-        url: '/proyek/php-crud/stock.transferCRD.php',
+        url: '/rab-project/php-crud/stock.transferCRD.php',
         baseParams: { task: 'read_warehouse' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, warehouseField)
     });
     warehouseDs.load();
 
     var binFromDs = new Ext.data.Store({
-        url: '/proyek/php-crud/stock.transferCRD.php',
+        url: '/rab-project/php-crud/stock.transferCRD.php',
         baseParams: { task: 'read_bin_by_warehouse' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, binField)
     });
     var binToDs = new Ext.data.Store({
-        url: '/proyek/php-crud/stock.transferCRD.php',
+        url: '/rab-project/php-crud/stock.transferCRD.php',
         baseParams: { task: 'read_bin_by_warehouse' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, binField)
     });
 
     var gradeDs = new Ext.data.Store({
-        url: '/proyek/php-crud/stock.transferCRD.php',
+        url: '/rab-project/php-crud/stock.transferCRD.php',
         baseParams: { task: 'read_grade' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, gradeField)
     });
     gradeDs.load();
 
     var itemComboDs = new Ext.data.Store({
-        url: '/proyek/php-crud/stock.transferCRD.php',
+        url: '/rab-project/php-crud/stock.transferCRD.php',
         baseParams: { task: 'read_item_combo' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, itemComboField)
     });
@@ -755,7 +755,7 @@ Ext.onReady(function () {
     });
 
     var mainDs = new Ext.data.Store({
-        url: '/proyek/php-crud/stock.transferCRD.php',
+        url: '/rab-project/php-crud/stock.transferCRD.php',
         idProperty: 'id',
         baseParams: { task: 'read' },
         reader: new Ext.data.JsonReader({ root: 'data' }, transferField)
@@ -908,7 +908,7 @@ Ext.onReady(function () {
         var itemId = record.get('item_id');
         if (!itemId || !fldWarehouseFrom.getValue()) return;
         Ext.Ajax.request({
-            url: '/proyek/php-crud/stock.transferCRD.php',
+            url: '/rab-project/php-crud/stock.transferCRD.php',
             method: 'POST',
             params: {
                 task: 'check_stock',
@@ -938,7 +938,7 @@ Ext.onReady(function () {
 
         itemGrid.el.mask('Memuat stok lokasi asal...', 'x-mask-loading');
         Ext.Ajax.request({
-            url: '/proyek/php-crud/stock.transferCRD.php',
+            url: '/rab-project/php-crud/stock.transferCRD.php',
             method: 'POST',
             params: {
                 task: 'read_stock_by_location',
@@ -1080,7 +1080,7 @@ Ext.onReady(function () {
                 Ext.Msg.confirm('Konfirmasi Hapus', "Hapus transfer '" + dataRecord.transfer_no + "'? Stok akan dikembalikan ke lokasi asal.", function (btn) {
                     if (btn === 'yes') {
                         Ext.Ajax.request({
-                            url: '/proyek/php-crud/stock.transferCRD.php',
+                            url: '/rab-project/php-crud/stock.transferCRD.php',
                             method: 'POST',
                             params: { task: 'delete', id: dataRecord.id },
                             success: function (response) {
@@ -1137,7 +1137,7 @@ Ext.onReady(function () {
             }
 
             frmEditor.getForm().submit({
-                url: '/proyek/php-crud/stock.transferCRD.php',
+                url: '/rab-project/php-crud/stock.transferCRD.php',
                 method: 'POST',
                 params: {
                     task: 'create',
@@ -1187,7 +1187,7 @@ Ext.onReady(function () {
                                           jenis kurs default, dasar kurs laba rugi, awal tahun fiskal, desimal
                    4. Dokumen           : footer & penandatangan + pratinjau kop dokumen
                   Transaksi (RAB, PO, dst) boleh multi currency; laporan keuangan final mengacu ke tab Keuangan.
-  Backend       : /proyek/php-crud/settingsCRD.php
+  Backend       : /rab-project/php-crud/settingsCRD.php
 */
 
 Ext.onReady(function () {
@@ -2530,7 +2530,7 @@ Ext.onReady(function() {
 /*
   Document      : stock_card.js
   Description   : Monitoring Kartu Stok (Stock Card) - Read-only report
-  Backend       : /proyek/php-crud/stock.cardCRD.php
+  Backend       : /rab-project/php-crud/stock.cardCRD.php
 */
 
 Ext.onReady(function () {
@@ -2983,7 +2983,7 @@ Ext.onReady(function () {
   Document      : m.trialbalance.js
   Description   : Trial Balance - Rekap saldo semua akun per periode,
                    dengan indikator total Debit = Kredit.
-  Backend       : /proyek/php-crud/trialbalanceCRD.php
+  Backend       : /rab-project/php-crud/trialbalanceCRD.php
 */
 
 Ext.onReady(function () {
@@ -4278,7 +4278,7 @@ Ext.onReady(function() {
 /*
   Document      : m.fiscalperiod.js
   Description   : Fiscal Period - Grid + Add Form + Close/Reopen action
-  Backend       : /proyek/php-crud/m.fiscalperiodCRD.php (tabel accounting_periods)
+  Backend       : /rab-project/php-crud/m.fiscalperiodCRD.php (tabel accounting_periods)
 */
 
 Ext.onReady(function () {
@@ -5480,7 +5480,7 @@ Ext.onReady(function() {
 /*
   Document      : m.fiscalconfig.js
   Description   : Fiscal Config - Grid + Detail View + Editor Form
-  Backend       : /proyek/php-crud/fiscalconfigCRD.php
+  Backend       : /rab-project/php-crud/fiscalconfigCRD.php
 */
 
 Ext.onReady(function () {
@@ -5796,13 +5796,13 @@ Ext.onReady(function () {
 <html>
     <head>
         <title id="page-title">Warehouse Issuing</title>
-        <link rel="stylesheet" type="text/css" href="/proyek/ext/resources/css/ext-all.css" />
-        <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/ext/resources/css/ext-all.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/header.black.css" />
         <style>
             #editorForm {top: 50%; width: 90%; height: auto !important; min-height: 480px !important; max-height: 85vh !important; overflow-y: auto !important;}
             #addFormHeaderText, #editorFormHeaderText{font-size: 1.3rem;text-align: center;}
         </style>
-        <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/grddetail.css" />
 
     </head>
     <body>
@@ -5810,7 +5810,7 @@ Ext.onReady(function () {
     <script type="text/javascript">
         window.formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 0)); ?>;
     </script>
-    <script type="text/javascript" src="/proyek/js/warehouse.issuing.js"></script>
+    <script type="text/javascript" src="/rab-project/js/warehouse.issuing.js"></script>
     <script type="text/javascript">
         document.getElementById('menu').innerHTML = <?php echo json_encode($_SESSION["linkMenu"] ?? ''); ?>;
         document.getElementById("mainHeaderText").innerHTML = "Warehouse <em>Issuing</em>";
@@ -5933,7 +5933,7 @@ Ext.onReady(function () {
                    Sisa perlu dibeli). Bisa centang beberapa baris lalu
                    klik "Buat PO dari Terpilih" -> lempar data ke
                    halaman PO (po.php, router?id=24) lewat sessionStorage.
-  Backend       : /proyek/php-crud/purchase.planningCRD.php
+  Backend       : /rab-project/php-crud/purchase.planningCRD.php
 */
 
 Ext.onReady(function () {
@@ -6240,7 +6240,7 @@ Ext.onReady(function () {
 /*
   Document      : deposit_report.js
   Description   : Monitoring Deposit (Customer Deposit / Supplier Deposit) - Read-only report
-  Backend       : /proyek/php-crud/deposit.reportCRD.php
+  Backend       : /rab-project/php-crud/deposit.reportCRD.php
 */
 
 Ext.onReady(function () {
@@ -6471,7 +6471,7 @@ Ext.onReady(function () {
                    Menerima draft dari Purchase Planning lewat sessionStorage 'po_draft_from_planning'.
                    Alur status: Draft -> Diajukan -> Disetujui -> Selesai (Dibatalkan dari Draft/Diajukan/Disetujui
                    selama belum ada GRN). Edit & Delete hanya untuk PO berstatus Draft.
-  Backend       : /proyek/php-crud/poCRD.php
+  Backend       : /rab-project/php-crud/poCRD.php
 */
 
 Ext.onReady(function () {
@@ -7480,7 +7480,7 @@ dtlDiv.style.overflowY = 'auto';
   Description   : Stock Opname (Koreksi Stok Fisik / Cycle Count) - WMS
                   Perbaikan: Buang BBar, Grid Default Counted = System Qty,
                   Detail View Panel di Bawah Grid Utama.
-  Backend       : /proyek/php-crud/stock.opnameCRD.php
+  Backend       : /rab-project/php-crud/stock.opnameCRD.php
 */
 
 Ext.onReady(function () {
@@ -7527,7 +7527,7 @@ Ext.onReady(function () {
 
     function loadOpnameDetail(opnameId, opnameNo) {
         Ext.Ajax.request({
-            url: '/proyek/php-crud/stock.opnameCRD.php',
+            url: '/rab-project/php-crud/stock.opnameCRD.php',
             method: 'POST',
             params: { task: 'read_detail_items', opname_id: opnameId },
             success: function (response) {
@@ -7614,14 +7614,14 @@ Ext.onReady(function () {
     var binField = [{ name: 'id' }, { name: 'code' }, { name: 'name' }];
 
     var warehouseDs = new Ext.data.Store({
-        url: '/proyek/php-crud/stock.opnameCRD.php',
+        url: '/rab-project/php-crud/stock.opnameCRD.php',
         baseParams: { task: 'read_warehouse' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, warehouseField)
     });
     warehouseDs.load();
 
     var binDs = new Ext.data.Store({
-        url: '/proyek/php-crud/stock.opnameCRD.php',
+        url: '/rab-project/php-crud/stock.opnameCRD.php',
         baseParams: { task: 'read_bin_by_warehouse' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, binField)
     });
@@ -7641,7 +7641,7 @@ Ext.onReady(function () {
     });
 
     var mainDs = new Ext.data.Store({
-        url: '/proyek/php-crud/stock.opnameCRD.php',
+        url: '/rab-project/php-crud/stock.opnameCRD.php',
         idProperty: 'id',
         baseParams: { task: 'read' },
         reader: new Ext.data.JsonReader({ root: 'data' }, opnameField)
@@ -7797,7 +7797,7 @@ Ext.onReady(function () {
         if (!warehouseId) return;
         itemGrid.el.mask('Memuat saldo sistem...');
         Ext.Ajax.request({
-            url: '/proyek/php-crud/stock.opnameCRD.php',
+            url: '/rab-project/php-crud/stock.opnameCRD.php',
             method: 'POST',
             params: { task: 'read_stock_snapshot', warehouse_id: warehouseId, bin_location_id: fldBin.getValue() || 0 },
             success: function (response) {
@@ -7857,7 +7857,7 @@ Ext.onReady(function () {
                 Ext.Msg.confirm('Konfirmasi Hapus', "Hapus opname '" + dataRecord.opname_no + "'? Penyesuaian stok yang sudah diposting akan dibatalkan.", function (btn) {
                     if (btn === 'yes') {
                         Ext.Ajax.request({
-                            url: '/proyek/php-crud/stock.opnameCRD.php',
+                            url: '/rab-project/php-crud/stock.opnameCRD.php',
                             method: 'POST',
                             params: { task: 'delete', id: dataRecord.id },
                             success: function (response) {
@@ -7909,7 +7909,7 @@ Ext.onReady(function () {
 
             var doSubmit = function () {
                 frmEditor.getForm().submit({
-                    url: '/proyek/php-crud/stock.opnameCRD.php',
+                    url: '/rab-project/php-crud/stock.opnameCRD.php',
                     method: 'POST',
                     params: { task: 'create', arrItems: JSON.stringify(arrItems) },
                     waitTitle: 'Menyimpan',
@@ -15588,7 +15588,7 @@ Ext.onReady(function() {
   Description   : Laporan Keuangan - Neraca & Laba Rugi, render sebagai
                    HTML table (bukan Ext Grid, supaya mudah bikin format
                    laporan keuangan konvensional: indentasi, subtotal, dll).
-  Backend       : /proyek/php-crud/financialreportCRD.php
+  Backend       : /rab-project/php-crud/financialreportCRD.php
 */
 
 Ext.onReady(function () {
@@ -16748,7 +16748,7 @@ Ext.onReady(function () {
                    mainDs di-assign POLOS (tanpa var/let) supaya search
                    box global di header (lihat many-template-icn.php)
                    bisa mengaksesnya.
-  Backend       : /proyek/php-crud/clientsCRD.php
+  Backend       : /rab-project/php-crud/clientsCRD.php
 */
 
 Ext.onReady(function () {
@@ -19344,7 +19344,7 @@ Ext.onReady(function() {
 /*
   Document      : m.master_proyek.js
   Description   : ExtJS Controller untuk pengelolaan Master Proyek
-  Backend       : /proyek/php-crud/m.proyekCRD.php
+  Backend       : /rab-project/php-crud/m.proyekCRD.php
 */
 
 Ext.onReady(function () {
@@ -20570,7 +20570,7 @@ Ext.onReady(function() {
 /*
   Document      : financial_profit_loss.js
   Description   : Income Statement (Rugi Laba) - Read-only report
-  Backend       : /proyek/php-crud/profitlossCRD.php
+  Backend       : /rab-project/php-crud/profitlossCRD.php
 */
 
 Ext.onReady(function () {
@@ -20789,13 +20789,13 @@ Ext.onReady(function() {
   };
   document.getElementById('printData').onclick = function(event) {
     if (poId > 0) {
-        window.open("/proyek/pdf/rpt_po_supplier_print.php?id=" + poId, '_blank');
+        window.open("/rab-project/pdf/rpt_po_supplier_print.php?id=" + poId, '_blank');
     } else {
         Ext.Msg.alert('Warning', 'Pilih Sales Order terlebih dahulu.');
         // Panggil dengan rentang tanggal
         let startDate = '2019-07-01';
         let endDate   = '2019-07-31';
-        window.open("/proyek/pdf/rpt_po_list_by_date.php?start_date=" + startDate + "&end_date=" + endDate, '_blank');
+        window.open("/rab-project/pdf/rpt_po_list_by_date.php?start_date=" + startDate + "&end_date=" + endDate, '_blank');
     }
    
   };
@@ -21207,7 +21207,7 @@ Ext.onReady(function() {
 /*
   Document      : m.journal.js
   Description   : Journal Entry (manual) - Header Grid + Detail View + Editor Form
-  Backend       : /proyek/php-crud/journal.entryCRD.php
+  Backend       : /rab-project/php-crud/journal.entryCRD.php
 */
 
 Ext.onReady(function () {
@@ -22516,7 +22516,7 @@ Ext.onReady(function() {
 /*
   Document      : Purchase Return (Retur Pembelian) - Frontend Logic
   Depends on    : ExtJS 3.4, std-framework
-  Backend       : /proyek/php-crud/purchase.returnCRD.php
+  Backend       : /rab-project/php-crud/purchase.returnCRD.php
 */
 Ext.onReady(function () {
     Ext.QuickTips.init();
@@ -23221,7 +23221,7 @@ Ext.onReady(function () {
   Description   : General Ledger - Laporan read-only, filter Akun & Periode
                    OPSIONAL. Kalau tidak dipilih, tampilkan semua akun /
                    semua periode, dikelompokkan per akun (GroupingView).
-  Backend       : /proyek/php-crud/generalledgerCRD.php
+  Backend       : /rab-project/php-crud/generalledgerCRD.php
 */
 
 Ext.onReady(function () {

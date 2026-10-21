@@ -1,12 +1,12 @@
-<link rel="shortcut icon" href="/proyek/assets/logo512.png" type="image/x-icon">
-<link rel="icon" href="/proyek/favicon.ico" type="image/x-icon">
-<link rel="stylesheet" type="text/css" href="/proyek/ext-3.4.1/resources/css/ext-all.css">
-<!-- <link rel="stylesheet" type="text/css" href="/proyek/css/ext-all.css"> -->
-<link rel="stylesheet" type="text/css" href="/proyek/css/ButtonColumn.css">
-<link rel="stylesheet" type="text/css" href="/proyek/css/myFonts.css">
-<link rel="stylesheet" type="text/css" href="/proyek/css/mainCSS.css">
-<link rel="stylesheet" type="text/css" href="/proyek/css/popUp.css">
-<link rel="stylesheet" type="text/css" href="/proyek/css/logWdw.css">
+<link rel="shortcut icon" href="/rab-project/assets/logo512.png" type="image/x-icon">
+<link rel="icon" href="/rab-project/favicon.ico" type="image/x-icon">
+<link rel="stylesheet" type="text/css" href="/rab-project/ext-3.4.1/resources/css/ext-all.css">
+<!-- <link rel="stylesheet" type="text/css" href="/rab-project/css/ext-all.css"> -->
+<link rel="stylesheet" type="text/css" href="/rab-project/css/ButtonColumn.css">
+<link rel="stylesheet" type="text/css" href="/rab-project/css/myFonts.css">
+<link rel="stylesheet" type="text/css" href="/rab-project/css/mainCSS.css">
+<link rel="stylesheet" type="text/css" href="/rab-project/css/popUp.css">
+<link rel="stylesheet" type="text/css" href="/rab-project/css/logWdw.css">
 <div id="container">
   <div class="layerBackGround"></div>
   <div id="content">
@@ -26,14 +26,14 @@
   </div>
   <?php include BASE_PATH . "/includes/div-links-menu.php"; ?>
 </div>
-<!-- <script type="text/javascript" src="/proyek/js-ext/ext-base.js"></script>
-<script type="text/javascript" src="/proyek/js-ext/ext-all.js"></script> -->
-<script type="text/javascript" src="/proyek/ext-3.4.1/adapter/ext/ext-base.js"></script>
-<script type="text/javascript" src="/proyek/ext-3.4.1/ext-all.js"></script>  
-<script type="text/javascript" src="/proyek/js-func/jquery-3.2.1.min.js"></script>
-<script type="text/javascript" src="/proyek/js-func/Chart.min.js"></script>
-<script type="text/javascript" src="/proyek/js-func/mainFunction.js"></script>
-<script type="text/javascript" src="/proyek/js-func/ExtExtend.js"></script>
+<!-- <script type="text/javascript" src="/rab-project/js-ext/ext-base.js"></script>
+<script type="text/javascript" src="/rab-project/js-ext/ext-all.js"></script> -->
+<script type="text/javascript" src="/rab-project/ext-3.4.1/adapter/ext/ext-base.js"></script>
+<script type="text/javascript" src="/rab-project/ext-3.4.1/ext-all.js"></script>  
+<script type="text/javascript" src="/rab-project/js-func/jquery-3.2.1.min.js"></script>
+<script type="text/javascript" src="/rab-project/js-func/Chart.min.js"></script>
+<script type="text/javascript" src="/rab-project/js-func/mainFunction.js"></script>
+<script type="text/javascript" src="/rab-project/js-func/ExtExtend.js"></script>
   
 <script type="text/javascript">
   let mainDs = '', gridAddEditorDs = '';

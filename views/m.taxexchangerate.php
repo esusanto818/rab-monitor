@@ -11,8 +11,8 @@
 ?>
 <html>
     <head>
-        <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
-        <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/header.black.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/grddetail.css" />
         <style>
             #editorForm { top: 30%; width: 65%; }
         </style>
@@ -20,7 +20,7 @@
     </head>
     <body>
     </body>
-    <script type="text/javascript" src="/proyek/js/m.taxexchangerate.js"></script>
+    <script type="text/javascript" src="/rab-project/js/m.taxexchangerate.js"></script>
     <script type="text/javascript">
         document.getElementById('menu').innerHTML = <?php echo json_encode($_SESSION["linkMenu"] ?? ''); ?>;
         var formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 4)); ?>;

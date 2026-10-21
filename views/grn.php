@@ -15,11 +15,11 @@
             #addForm {top: 50%; width: 85%; height: 70%;}
         </style>
         <title id="page-title">GRN</title>
-        <link rel="stylesheet" type="text/css" href="/proyek/ext-3.4.1/resources/css/ext-all.css" />
-        <link rel="stylesheet" type="text/css" href="/proyek/css/mainCSS.css" />
-        <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
-        <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
-        <link rel="stylesheet" type="text/css" href="/proyek/css/frm.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/ext-3.4.1/resources/css/ext-all.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/mainCSS.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/header.black.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/grddetail.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/frm.css" />
         <script type="text/javascript">
             window.formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 0)); ?>;
         </script>
@@ -27,7 +27,7 @@
     <body>
     </body>
     <script type="text/javascript" src="../js-ext/ux/CheckColumn.js"></script>
-    <script type="text/javascript" src="/proyek/js/grn.js"></script>
+    <script type="text/javascript" src="/rab-project/js/grn.js"></script>
     <script type="text/javascript">
         document.getElementById('menu').innerHTML = <?php echo json_encode($_SESSION["linkMenu"] ?? ''); ?>;
         document.getElementById("mainHeaderText").innerHTML = "Purchase <em>GRN</em>";

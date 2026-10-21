@@ -12,16 +12,16 @@
                    diisi dalam mata uang pembayaran; tagihan termin tetap IDR, nilai setara IDR = nilai x kurs (dibatasi sisa tagihan).
                    [JURNAL] simpan pembayaran memposting jurnal otomatis (Kas/Bank wajib dipilih); hapus pembayaran menghapus jurnalnya.
                    [AI-VARIANCE] Integrasi Analisis Varian Anggaran dan Risiko Proyek menggunakan Google Gemini API.
-  Backend       : /proyek/php-crud/project.paymentCRD.php
-  Cetak         : /proyek/views/project.payment.print.php?id=<id>  (project.payment.print.js)
+  Backend       : /rab-project/php-crud/project.paymentCRD.php
+  Cetak         : /rab-project/views/project.payment.print.php?id=<id>  (project.payment.print.js)
 */
 
 Ext.onReady(function () {
     Ext.QuickTips.init();
     document.getElementById("mainHeaderText").innerHTML = "Pembayaran <em>Termin</em>";
 
-    var CRD = '../php-crud/project.paymentCRD.php';
-    var PRINT_URL = '/proyek/views/project.payment.print.php?id=';
+    var CRD = '/rab-project/php-crud/project.paymentCRD.php';
+    var PRINT_URL = '/rab-project/views/project.payment.print.php?id=';
     var ACCESS_ADD = 2;      // level akses minimal: input pembayaran / termin
     var ACCESS_EDIT = 3;     // level akses minimal: hapus pembayaran
     var VEPS = 0.01;         // toleransi nilai
@@ -86,18 +86,18 @@ Ext.onReady(function () {
             recHtml = '<li>Tidak ada rekomendasi khusus.</li>';
         }
 
-        // Ukuran teks dinaikkan 2px (14px teks, 15px judul, 13px badge risiko)
-        var html = '<div style="margin-top:15px; background:#162330; border:1px solid #1e3a4c; border-radius:4px; padding:16px; color:#ffffff;">' +
+        // Tampilan kontras tinggi dengan padding bagian bawah yang memadai
+        var html = '<div style="margin-top:15px; margin-bottom:25px; background:#111b24; border:1px solid #00bcd4; border-radius:6px; padding:18px; color:#ffffff !important;">' +
                    '<div style="font-weight:bold; font-size:15px; color:#00bcd4; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">' +
                    '<span>&#9881; AI Cost & Schedule Variance Analysis</span>' +
                    '<span style="background:' + riskColor + '; color:#fff; padding:3px 10px; border-radius:3px; font-size:13px;">RISK: ' + enc(d.risk_level) + '</span>' +
                    '</div>' +
-                   '<div style="font-size:14px; line-height:22px; margin-bottom:10px;">' +
-                   '<b>Ringkasan Eksekutif:</b> ' + enc(d.ai_summary) +
+                   '<div style="font-size:14px; line-height:22px; margin-bottom:12px; color:#ffffff !important;">' +
+                   '<b style="color:#00bcd4;">Ringkasan Eksekutif:</b> ' + enc(d.ai_summary) +
                    '</div>' +
-                   '<div style="font-size:14px; line-height:22px;">' +
-                   '<b>Rekomendasi Mitigasi:</b>' +
-                   '<ul style="margin:6px 0 0 18px; padding:0;">' + recHtml + '</ul>' +
+                   '<div style="font-size:14px; line-height:22px; color:#ffffff !important;">' +
+                   '<b style="color:#00bcd4;">Rekomendasi Mitigasi:</b>' +
+                   '<ul style="margin:6px 0 0 18px; padding:0; color:#ffffff !important;">' + recHtml + '</ul>' +
                    '</div>' +
                    '</div>';
 
@@ -108,7 +108,12 @@ Ext.onReady(function () {
             dtlDiv.appendChild(aiContainer);
         }
         aiContainer.innerHTML = html;
-        dtlDiv.scrollTop = dtlDiv.scrollHeight; // Auto-scroll ke hasil AI di bawah
+        dtlDiv.style.display = 'block';
+
+        // Auto-scroll halus ke bagian bawah area detail
+        setTimeout(function() {
+            dtlDiv.scrollTop = dtlDiv.scrollHeight;
+        }, 100);
     }
 
     function enc(v) { return Ext.util.Format.htmlEncode(v == null ? '' : v); }
@@ -166,13 +171,14 @@ Ext.onReady(function () {
     function maxPay(remaining) { var r = curRate(); return r > 0 ? round2(remaining / r) : 0; }
 
     // ------------------------------------------------------------
-    // 0. Panel Detail (di bawah grid utama) - Tinggi Fleksibel & Anti-Potong
+    // 0. Panel Detail Dinamis Berbasis Persentase Tinggi Layanan
     // ------------------------------------------------------------
     var gridContainer = document.getElementById('divMainGrid');
-    var GridMainHeight = maxGridHeight(document.getElementById('divMainGrid'));
+    var screenH = window.innerHeight || document.documentElement.clientHeight || 700;
     
-    // Porsi grid utama diperkecil (0.45) agar panel detail memiliki ruang vertikal yang luas
-    var mainHeight = Math.round(GridMainHeight * 0.45);
+    // Alokasi porsi grid utama & panel detail mengikuti persentase tinggi layar
+    var mainHeight = Math.round(screenH * 0.38);
+    var dtlHeight  = Math.round(screenH * 0.45);
 
     (function injectHeaderCss() {
         var st = document.createElement('style');
@@ -190,13 +196,28 @@ Ext.onReady(function () {
     dtlDiv.id = 'ppDtlContainer';
     dtlDiv.className = 'detail-panel-container';
     dtlDiv.style.display = 'none';
-    dtlDiv.style.height = 'auto';          // Menyesuaikan isi secara dinamis
-    dtlDiv.style.minHeight = '320px';      // Ruang minimum yang lega
-    dtlDiv.style.maxHeight = '600px';      // Batas maksimum agar scroller aktif jika konten sangat panjang
-    dtlDiv.style.overflowY = 'auto';       // Scrollbar vertikal aktif
+    
+    // Pengaturan tinggi dan scroller otomatis berbasis persentase screen
+    dtlDiv.style.height = dtlHeight + 'px';
+    dtlDiv.style.maxHeight = dtlHeight + 'px';
+    dtlDiv.style.overflowY = 'auto';     
+    dtlDiv.style.overflowX = 'hidden';   
+    dtlDiv.style.paddingRight = '8px';
+    dtlDiv.style.paddingBottom = '20px';
+
     if (gridContainer && gridContainer.parentNode) {
         gridContainer.parentNode.insertBefore(dtlDiv, gridContainer.nextSibling);
     }
+
+    // Penyesuaian dinamis saat jendela peramban diubah ukurannya (resize)
+    Ext.EventManager.onWindowResize(function () {
+        var newH = window.innerHeight || document.documentElement.clientHeight || 700;
+        var newDtlH = Math.round(newH * 0.45);
+        if (dtlDiv) {
+            dtlDiv.style.height = newDtlH + 'px';
+            dtlDiv.style.maxHeight = newDtlH + 'px';
+        }
+    });
 
     function loadDetailPanel(id) {
         ajax({ task: 'load_payment', id: id }, function (res) {

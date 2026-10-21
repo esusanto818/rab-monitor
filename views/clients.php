@@ -14,7 +14,7 @@
             #editorForm {top: 30%; width: 80%; }
         </style>
         <title id="page-title">Client</title>
-        <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/header.black.css" />
         <script type="text/javascript">
             window.formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 0)); ?>;
         </script>
@@ -26,7 +26,7 @@
         <div id="editorFormMain"></div>
         </div>
     </body>
-    <script type="text/javascript" src="/proyek/js/clients.js"></script>
+    <script type="text/javascript" src="/rab-project/js/clients.js"></script>
     <script type="text/javascript">
         document.getElementById('menu').innerHTML = <?php echo json_encode($_SESSION["linkMenu"] ?? ''); ?>;
         document.getElementById("mainHeaderText").innerHTML = "Master Data <em>Client & List</em>";

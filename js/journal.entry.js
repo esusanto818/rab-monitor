@@ -1,7 +1,7 @@
 /*
   Document      : m.journal.js
   Description   : Journal Entry (manual) - Header Grid + Detail View + Editor Form
-  Backend       : /proyek/php-crud/journal.entryCRD.php
+  Backend       : /rab-project/php-crud/journal.entryCRD.php
 */
 
 Ext.onReady(function () {

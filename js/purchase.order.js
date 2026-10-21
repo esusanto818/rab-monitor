@@ -61,13 +61,13 @@ Ext.onReady(function() {
   };
   document.getElementById('printData').onclick = function(event) {
     if (poId > 0) {
-        window.open("/proyek/pdf/rpt_po_supplier_print.php?id=" + poId, '_blank');
+        window.open("/rab-project/pdf/rpt_po_supplier_print.php?id=" + poId, '_blank');
     } else {
         Ext.Msg.alert('Warning', 'Pilih Sales Order terlebih dahulu.');
         // Panggil dengan rentang tanggal
         let startDate = '2019-07-01';
         let endDate   = '2019-07-31';
-        window.open("/proyek/pdf/rpt_po_list_by_date.php?start_date=" + startDate + "&end_date=" + endDate, '_blank');
+        window.open("/rab-project/pdf/rpt_po_list_by_date.php?start_date=" + startDate + "&end_date=" + endDate, '_blank');
     }
    
   };

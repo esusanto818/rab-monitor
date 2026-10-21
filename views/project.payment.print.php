@@ -55,6 +55,6 @@
         <script type="text/javascript">
             window.PAYMENT_ID = <?php echo json_encode($paymentId); ?>;
         </script>
-        <script type="text/javascript" src="/proyek/js/project.payment.print.js"></script>
+        <script type="text/javascript" src="/rab-project/js/project.payment.print.js"></script>
     </body>
 </html>

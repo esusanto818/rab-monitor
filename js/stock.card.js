@@ -2,7 +2,7 @@
   Document    : stock.card.js
   Description : Stock Card (kartu stok) per item, per gudang / semua gudang. ExtJS 3.4.1
   Backend     : ../php-crud/stock.cardCRD.php
-  REVISI      : - URL backend relatif terhadap /proyek/views/ (sama seperti po.js)      [FIX #1]
+  REVISI      : - URL backend relatif terhadap /rab-project/views/ (sama seperti po.js)      [FIX #1]
                 - render ke #divMainGrid (container standar template), bukan #main-content [FIX #2]
                 - header, tombol Add/Edit/Delete dinonaktifkan seperti modul lain          [FIX #3]
                 - popup error menampilkan cuplikan respons server (debug HTTP 200)         [FIX #4]
@@ -33,7 +33,7 @@ Ext.onReady(function () {
         'kartu-stok-css'
     );
 
-    // [FIX #1] sebelumnya 'php-crud/stock.cardCRD.php' -> 404 karena halaman berada di /proyek/views/
+    // [FIX #1] sebelumnya 'php-crud/stock.cardCRD.php' -> 404 karena halaman berada di /rab-project/views/
     var URL = '../php-crud/stock.cardCRD.php';
     // [FIX #2] container standar template
     var RENDER_TO = 'divMainGrid';

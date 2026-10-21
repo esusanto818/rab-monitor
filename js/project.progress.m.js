@@ -7,12 +7,12 @@
                   - OFFLINE: klaim + foto disimpan di IndexedDB, dikirim otomatis saat online / aplikasi dibuka
                   - Aturan server (tetap berlaku): persen > progress terverifikasi, bukti wajib, hanya 1 klaim menunggu per proyek,
                     proyek berstatus Berjalan / Tertunda
-  Backend       : /proyek/php-crud/project.progressCRD.php
+  Backend       : /rab-project/php-crud/project.progressCRD.php
 */
 (function () {
     'use strict';
 
-    var CRD = '/proyek/php-crud/project.progressCRD.php';   // [PENTING] samakan dengan nama file backend di server
+    var CRD = '/rab-project/php-crud/project.progressCRD.php';   // [PENTING] samakan dengan nama file backend di server
     var ACCESS_REPORT = 2;                                  // samakan dengan PROG_ACCESS_REPORT di backend
     var MAX_PHOTOS = 5, MAX_SIDE = 1280, JPEG_Q = 0.75;
     var LS_PROJECTS = 'prg_claim_projects_cache';
@@ -454,6 +454,6 @@
     if (navigator.storage && navigator.storage.persist) { navigator.storage.persist(); }
 
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/proyek/sw.progress.js', { scope: '/proyek/' }).catch(function () {});
+        navigator.serviceWorker.register('/rab-project/sw.progress.js', { scope: '/rab-project/' }).catch(function () {});
     }
 })();

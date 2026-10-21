@@ -3,7 +3,7 @@
   Description   : General Ledger - Laporan read-only, filter Akun & Periode
                    OPSIONAL. Kalau tidak dipilih, tampilkan semua akun /
                    semua periode, dikelompokkan per akun (GroupingView).
-  Backend       : /proyek/php-crud/generalledgerCRD.php
+  Backend       : /rab-project/php-crud/generalledgerCRD.php
 */
 
 Ext.onReady(function () {

@@ -1,7 +1,7 @@
 /*
   Document      : financial_balance_sheet.js
   Description   : Balance Sheet (Neraca Keuangan) - Read-only report
-  Backend       : /proyek/php-crud/balancesheetCRD.php
+  Backend       : /rab-project/php-crud/balancesheetCRD.php
 */
 
 Ext.onReady(function () {

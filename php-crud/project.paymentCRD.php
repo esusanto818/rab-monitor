@@ -157,12 +157,8 @@ try {
                     - \"recommendations\": array of strings (poin-poin tindakan mitigasi konkret untuk kontraktor)
                 ";
 
-                
                 // Daftar model cadangan (fallback) untuk mengantisipasi trafik tinggi / error 503
-                $candidateModels = [
-                    'gemini-1.5-flash',
-                    'gemini-3.8-flash',
-                ];
+                $candidateModels = ['gemini-3.6-flash','gemini-3.5-flash-lite'];
 
                 $payload = json_encode([
                     'contents' => [

@@ -15,7 +15,7 @@
     <head>
       <link rel="stylesheet" type="text/css" href="../css/header.black.css" />
       <style>#editorForm {top: 30%; width: 60%;}</style>
-      <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+      <link rel="stylesheet" type="text/css" href="/rab-project/css/grddetail.css" />
       <title id="page-title">Currency</title>
     </head>
     <script type="text/javascript" src="../js/m.currency.js"></script>

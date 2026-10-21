@@ -17,8 +17,8 @@ header('ngrok-skip-browser-warning: 1');
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#03615e">
     <title>Lapor Progress</title>
-    <link rel="manifest" href="/proyek/manifest.progress.json">
-    <link rel="apple-touch-icon" href="/proyek/assets/icon-192.png">
+    <link rel="manifest" href="/rab-project/manifest.progress.json">
+    <link rel="apple-touch-icon" href="/rab-project/assets/icon-192.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <style>
@@ -91,6 +91,6 @@ header('ngrok-skip-browser-warning: 1');
     <script type="text/javascript">
         window.formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 0)); ?>;
     </script>
-    <script type="text/javascript" src="/proyek/js/project.progress.m.js"></script>
+    <script type="text/javascript" src="/rab-project/js/project.progress.m.js"></script>
 </body>
 </html>

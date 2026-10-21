@@ -1,7 +1,7 @@
 /*
   Document      : m.fiscalconfig.js
   Description   : Fiscal Config - Grid + Detail View + Editor Form
-  Backend       : /proyek/php-crud/fiscalconfigCRD.php
+  Backend       : /rab-project/php-crud/fiscalconfigCRD.php
 */
 
 Ext.onReady(function () {

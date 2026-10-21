@@ -423,7 +423,7 @@ function RtCancel() {
     WhOk('Retur dibatalkan.');
 }
 
-// [CHANGED] Unggah bukti cacat (foto / PDF, maks 5 MB) -> disimpan di /proyek/uploads/return/, kembalikan URL
+// [CHANGED] Unggah bukti cacat (foto / PDF, maks 5 MB) -> disimpan di /rab-project/uploads/return/, kembalikan URL
 function RtUploadEvidence() {
     WhRequirePost();
     WhUserId();                                              // pastikan sesi valid
@@ -455,5 +455,5 @@ function RtUploadEvidence() {
     if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) {
         throw new WhException('Gagal menyimpan file. Cek izin tulis folder uploads/return.');
     }
-    WhJson(array('success' => true, 'url' => '/proyek/uploads/return/' . $name, 'name' => $name));
+    WhJson(array('success' => true, 'url' => '/rab-project/uploads/return/' . $name, 'name' => $name));
 }
