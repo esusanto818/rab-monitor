@@ -144,15 +144,15 @@ try {
             $htmlOutput = "<base href=\"/proyekgmn/\">\n" . $htmlOutput;
         }
         */
-        // B. AUTO-REPLACE STRING PATH RELATIF TANPA UBAH DUSUN FILE DARI FRONTEND
+        // B. AUTO-REPLACE STRING PATH RELATIF TANPA UpBAH DUSUN FILE DARI FRONTEND
         $patterns = [
-            '="../css/'      => '="/proyek/css/',
-            '="../js/'       => '="/proyek/js/',
-            '="../js-ext/'   => '="/proyek/js-ext/',
-            '="../pdf/'      => '="/proyek/pdf/',
-            '="../tcpdf_new/'=> '="/proyek/tcpdf_new/',
-            '="../js-func/'  => '="/proyek/js-func/',
-            '="../php-crud/' => '="/proyek/php-crud/',
+            '="../css/'      => '="/rab-project/css/',
+            '="../js/'       => '="/rab-project/js/',
+            '="../js-ext/'   => '="/rab-project/js-ext/',
+            '="../pdf/'      => '="/rab-project/pdf/',
+            '="../tcpdf_new/'=> '="/rab-project/tcpdf_new/',
+            '="../js-func/'  => '="/rab-project/js-func/',
+            '="../php-crud/' => '="/rab-project/php-crud/',
 
         ];
         $htmlOutput = strtr($htmlOutput, $patterns);

@@ -1,16 +1,16 @@
 RewriteEngine On
-RewriteBase /proyek/
+RewriteBase /rab-project/
 
 # 1. Jika ada request yang terlanjur minta /inv/router.php, alihkan (301) ke /inv/router (pretty URL)
-RewriteCond %{THE_REQUEST} \s/proyek/router\.php[?\s] [NC]
-RewriteRule ^router\.php$ /proyek/router [R=301,L,QSA]
+RewriteCond %{THE_REQUEST} \s/rab-project/router\.php[?\s] [NC]
+RewriteRule ^router\.php$ /rab-project/router [R=301,L,QSA]
 
 # 2. Pemetaan internal: mengarahkan /inv/router ke router.php secara transparan
 RewriteRule ^router$ router.php [L,QSA]
 
 # 3. Jika request ditujukan langsung ke /inv/php/router.php, alihkan ke /inv/router
-RewriteCond %{REQUEST_URI} ^/proyek/php/router\.php [NC]
-RewriteRule ^php/router\.php$ /proyek/router [R=301,L,QSA]
+RewriteCond %{REQUEST_URI} ^/rab-project/php/router\.php [NC]
+RewriteRule ^php/router\.php$ /rab-project/router [R=301,L,QSA]
 
 # 4. Kecualikan file & folder fisik asli
 RewriteCond %{REQUEST_FILENAME} -f [OR]

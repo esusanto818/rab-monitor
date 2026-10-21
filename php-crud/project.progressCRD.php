@@ -21,7 +21,7 @@
  *                        tolak wajib catatan; setujui saat indeks biaya MERAH wajib catatan. Saat disetujui, posisi
  *                        budget / biaya / indeks disimpan sebagai jejak audit (snap_*).
  *  4. Batal            : pelapor (atau akses verifikasi) dapat membatalkan klaim yang masih Diajukan.
- *  5. Bukti          : boleh berupa file unggahan (foto / PDF, maks 5 file x 5 MB -> /proyek/uploads/progress/) dan/atau teks (no. BAP).
+ *  5. Bukti          : boleh berupa file unggahan (foto / PDF, maks 5 file x 5 MB -> /rab-project/uploads/progress/) dan/atau teks (no. BAP).
  *                      Beberapa bukti disimpan satu per baris di evidence_ref (butuh kolom text: sql/2026-10-13.progress_evidence.sql).
  *  Butuh sql/2026-10-12.project_progress.sql.
  * ============================================================
@@ -196,7 +196,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * [NEW] Unggah bukti progress (foto / PDF, maks 5 MB) -> /proyek/uploads/progress/, kembalikan URL.
+         * [NEW] Unggah bukti progress (foto / PDF, maks 5 MB) -> /rab-project/uploads/progress/, kembalikan URL.
          *       Pola sama dengan upload bukti pengiriman di warehouse.issuingCRD.php.
          * ------------------------------------------------------------------ */
         case 'upload_evidence':
@@ -229,7 +229,7 @@ try {
             if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) {
                 throw new ProgBusinessError('Gagal menyimpan file. Cek izin tulis folder uploads/progress.');
             }
-            sendJsonResponse(true, ['url' => '/proyek/uploads/progress/' . $name, 'name' => $name]);
+            sendJsonResponse(true, ['url' => '/rab-project/uploads/progress/' . $name, 'name' => $name]);
             break;
 
         /* ------------------------------------------------------------------

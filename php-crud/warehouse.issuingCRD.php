@@ -448,7 +448,7 @@ function IssUploadProof() {
     if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) {
         throw new WhException('Gagal menyimpan file. Cek izin tulis folder uploads/delivery.');
     }
-    WhJson(array('success' => true, 'url' => '/proyek/uploads/delivery/' . $name, 'name' => $name));
+    WhJson(array('success' => true, 'url' => '/rab-project/uploads/delivery/' . $name, 'name' => $name));
 }
 
 // [BACKFILL-RETUR][NEW] Backfill sekali jalan: jurnal retur supplier (Dr GRN Clearing / Cr Persediaan, rule RETURN_SUPPLIER)

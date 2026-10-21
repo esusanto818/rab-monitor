@@ -1,15 +1,15 @@
 /*
   Document    : sw.progress.js
-  Description : Service worker Project Progress mobile. Letakkan di /proyek/ (root scope).
+  Description : Service worker Project Progress mobile. Letakkan di /rab-project/ (root scope).
                 - Shell halaman + JS: network-first, fallback cache (aplikasi tetap terbuka saat offline)
                 - php-crud/* TIDAK pernah di-cache (data selalu dari server; antrean offline ditangani IndexedDB di halaman)
                 Naikkan VERSION setiap kali project.progress.m.js / halaman diubah.
 */
 var VERSION = 'prg-v2';      // [DIUBAH] v1 -> v2: halaman mobile kini memakai alur klaim modul desktop
 var SHELL = [
-    '/proyek/views/project.progress.m.php',
-    '/proyek/js/project.progress.m.js',
-    '/proyek/manifest.progress.json'
+    '/rab-project/views/project.progress.m.php',
+    '/rab-project/js/project.progress.m.js',
+    '/rab-project/manifest.progress.json'
 ];
 
 self.addEventListener('install', function (e) {

@@ -1,7 +1,7 @@
 <?php
 /*
   Document      : Balance Sheet (Neraca) - CRUD & Report Handler
-  Backend       : /proyek/php-crud/financial_balance_sheetCRD.php
+  Backend       : /rab-project/php-crud/financial_balance_sheetCRD.php
 */
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 

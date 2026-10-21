@@ -6,7 +6,7 @@
                   Nilai hasil  = Budget (x kurs anggaran) x progress terverifikasi
                   Biaya aktual = pemakaian material (issue PROJECT) + biaya non-material
                   Indeks biaya = Nilai hasil / Biaya aktual (kuning < 0,90; merah < 0,80 -- ambang dari server)
-  Backend       : /proyek/php-crud/project.progressCRD.php
+  Backend       : /rab-project/php-crud/project.progressCRD.php
   [NEW 2026-10-13 #2] Dialog Lapor Progress memakai gaya gelap (tombol Ajukan / Batal kini terbaca) + unggah bukti foto / PDF
                   (maks 5 file x 5 MB) + isian teks (no. BAP). Tombol Verifikasi mengikuti flag server allow_self_verify;
                   untuk klaim milik sendiri tampil keterangan 'verifikasi oleh pengguna lain'.

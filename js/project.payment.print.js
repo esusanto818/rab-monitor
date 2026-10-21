@@ -4,10 +4,10 @@
                   Tanpa ExtJS: ambil data lewat XMLHttpRequest ke php-crud/project.paymentCRD.php (task=load_payment),
                   lalu render ke <div id="receipt">. Mendukung pembayaran multi proyek & multi currency.
   Pemakaian     : window.PAYMENT_ID diisi oleh project.payment.print.php.
-  Lokasi file   : /proyek/js/project.payment.print.js
+  Lokasi file   : /rab-project/js/project.payment.print.js
 */
 (function () {
-    var CRD = '/proyek/php-crud/project.paymentCRD.php';
+    var CRD = '/rab-project/php-crud/project.paymentCRD.php';
     // Isi identitas perusahaan untuk kop tanda terima
     var COMPANY_NAME = 'PT. NAMA PERUSAHAAN';              // GANTI sesuai perusahaan
     var COMPANY_ADDR = 'Alamat perusahaan, kota - telp';    // GANTI sesuai perusahaan

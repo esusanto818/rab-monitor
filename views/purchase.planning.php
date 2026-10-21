@@ -13,9 +13,9 @@
 <html>
     <head>
         <title id="page-title">Planning</title>
-        <link rel="stylesheet" type="text/css" href="/proyek/ext-3.4.1/resources/css/ext-all.css" />
-        <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
-        <link rel="stylesheet" type="text/css" href="/proyek/css/grddetail.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/ext-3.4.1/resources/css/ext-all.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/header.black.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/grddetail.css" />
 
     </head>
     <body>
@@ -23,7 +23,7 @@
     <script type="text/javascript">
         window.formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 0)); ?>;
     </script>
-    <script type="text/javascript" src="/proyek/js/purchase.planning.js"></script>
+    <script type="text/javascript" src="/rab-project/js/purchase.planning.js"></script>
     <script type="text/javascript">
         document.getElementById('menu').innerHTML = <?php echo json_encode($_SESSION["linkMenu"] ?? ''); ?>;
         document.getElementById("mainHeaderText").innerHTML = "Purchase <em>Planning</em>";

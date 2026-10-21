@@ -173,7 +173,7 @@ function PrgUploadBa() {
     if (!is_dir($dir)) @mkdir($dir, 0755, true);
     $name = 'ba_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '.' . $ext;
     if (move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) {
-        WhJson(array('success' => true, 'url' => '/proyek/uploads/progress/' . $name));
+        WhJson(array('success' => true, 'url' => '/rab-project/uploads/progress/' . $name));
     } else {
         throw new WhException('Gagal mengunggah file.');
     }

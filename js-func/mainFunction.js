@@ -3,10 +3,10 @@
 */
 Ext.Ajax.on('beforerequest', function(conn, options) {
     if (options.url) {
-        // Otomatis ubah ../js/, ../css/, ../php-crud/ menjadi path absolut /proyek/
-        options.url = options.url.replace(/^(\.\.\/)+/, '/proyek/');
+        // Otomatis ubah ../js/, ../css/, ../php-crud/ menjadi path absolut /rab-project/
+        options.url = options.url.replace(/^(\.\.\/)+/, '/rab-project/');
         if (!options.url.startsWith('/') && !options.url.startsWith('http')) {
-            options.url = '/proyek/' + options.url;
+            options.url = '/rab-project/' + options.url;
         }
     }
 });

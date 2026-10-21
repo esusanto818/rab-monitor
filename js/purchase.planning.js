@@ -6,7 +6,7 @@
                    Sisa perlu dibeli). Bisa centang beberapa baris lalu
                    klik "Buat PO dari Terpilih" -> lempar data ke
                    halaman PO (po.php, router?id=24) lewat sessionStorage.
-  Backend       : /proyek/php-crud/purchase.planningCRD.php
+  Backend       : /rab-project/php-crud/purchase.planningCRD.php
 */
 
 Ext.onReady(function () {

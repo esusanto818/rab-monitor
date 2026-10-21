@@ -59,7 +59,7 @@ Ext.onReady(function () {
     })();
     document.getElementById("mainHeaderText").innerHTML = "Retur <em>Pembelian</em>";
 
-    var CRD = '../php-crud/purchase.returnCRD.php';     // [CHANGED] relatif dari /proyek/views/
+    var CRD = '../php-crud/purchase.returnCRD.php';     // [CHANGED] relatif dari /rab-project/views/
     var ACCESS_ADD = 2;      // level akses minimal: buat retur
     var ACCESS_EDIT = 3;     // level akses minimal: ubah / batalkan / kirim / selesaikan
     var EPS = 0.00005;       // toleransi qty

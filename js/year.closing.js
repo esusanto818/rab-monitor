@@ -6,7 +6,7 @@
                   tanggal 31 Desember dan (opsional) mengunci seluruh periode tahun itu.
                   Delete = buka kembali penutupan TERAKHIR (jurnal dihapus, periode dibuka). Edit tidak tersedia.
                   Pola mengikuti po.js / project.wiprelease.js (template many-template-icn.php).
-  Backend       : /proyek/php-crud/year.closingCRD.php
+  Backend       : /rab-project/php-crud/year.closingCRD.php
 */
 
 Ext.onReady(function () {

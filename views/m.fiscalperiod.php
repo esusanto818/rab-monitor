@@ -28,7 +28,7 @@
             }
         </style>
         <title id="page-title">Fiscal Period</title>
-        <link rel="stylesheet" type="text/css" href="/proyek/css/header.black.css" />
+        <link rel="stylesheet" type="text/css" href="/rab-project/css/header.black.css" />
     </head>
     <body>
     </body>
@@ -38,7 +38,7 @@
     </script>
     
     <!-- 2. BARU PANGGIL SKRIP EXTERNAL JS -->
-    <script type="text/javascript" src="/proyek/js/m.fiscalperiod.js"></script>
+    <script type="text/javascript" src="/rab-project/js/m.fiscalperiod.js"></script>
     
     <script type="text/javascript">
         document.getElementById('menu').innerHTML = <?php echo json_encode($_SESSION["linkMenu"] ?? ''); ?>;
