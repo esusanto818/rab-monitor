@@ -58,6 +58,21 @@
     function fail(message) {
         root.innerHTML = '<div class="err">' + esc(message) + '</div>';
     }
+    // Gaya cetak mengikuti hierarki panel AI pada layar detail pembayaran.
+    (function injectAiPrintStyles() {
+        var style = document.createElement('style');
+        style.textContent =
+            '.ai-project-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;color:#075e58;font-size:14px}' +
+            '.ai-risk{font-weight:bold;border:1px solid currentColor;padding:3px 8px;border-radius:3px;white-space:nowrap}' +
+            '.ai-summary{font-size:12px;line-height:1.55;margin-bottom:12px}' +
+            '.ai-summary p{margin:5px 0 0;white-space:pre-wrap}' +
+            '.ai-mitigations{font-size:12px;line-height:1.5}' +
+            '.ai-recommendations{margin:6px 0 0 18px;padding:0}' +
+            '.ai-recommendations li{margin-bottom:6px}' +
+            '.ai-project{margin:12px 0;padding:10px 0;border-bottom:1px solid #d8e0e3}';
+        document.head.appendChild(style);
+    })();
+
     function renderAiPlaceholder(projects) {
         if (!projects.length) {
             return '<section class="ai-section"><h3>Hasil Analisis AI — Varian Anggaran & Risiko</h3>' +
@@ -142,21 +157,21 @@
                 } else {
                     var d = res.data;
                     var risk = String(d.risk_level || 'BELUM DIKETAHUI').toUpperCase();
-                    var color = (risk === 'HIGH' || risk === 'CRITICAL') ? '#b42318' : (risk === 'MEDIUM' ? '#946200' : '#167347');
+                    var color = (risk === 'HIGH' || risk === 'CRITICAL') ? '#e05353' :
+                                (risk === 'MEDIUM' ? '#e6a817' : '#2e9e4f');
                     var recs = Array.isArray(d.recommendations) ? d.recommendations : [];
                     var recHtml = recs.length ? '<ul class="ai-recommendations">' + recs.map(function (rec) {
                         return '<li>' + esc(rec) + '</li>';
-                    }).join('') + '</ul>' : '<p>Tidak ada rekomendasi tersimpan.</p>';
-                    var variance = '';
-                    if (d.total_budget !== undefined || d.total_actual !== undefined) {
-                        variance = '<p><b>Anggaran:</b> ' + money(d.total_budget) + ' IDR &nbsp;|&nbsp; <b>Realisasi:</b> ' +
-                            money(d.total_actual) + ' IDR &nbsp;|&nbsp; <b>Varian:</b> ' + money(d.variance_amount) +
-                            ' IDR (' + money(d.variance_percentage) + '%)</p>';
-                    }
-                    htmlByProject[projectId] = '<div class="ai-project"><b>' + esc(projectName) + '</b>' +
-                        '<p><span class="ai-risk" style="color:' + color + '">Tingkat Risiko: ' + esc(risk) + '</span></p>' +
-                        '<p class="ai-summary"><b>Ringkasan Eksekutif:</b><br>' + esc(d.ai_summary || '-') + '</p>' +
-                        variance + '<b>Rekomendasi Mitigasi:</b>' + recHtml + '</div>';
+                    }).join('') + '</ul>' : '<ul class="ai-recommendations"><li>Tidak ada rekomendasi khusus.</li></ul>';
+
+                    // Urutan disamakan dengan panel analisis AI pada detail pembayaran:
+                    // judul + tingkat risiko, Ringkasan Eksekutif, lalu Rekomendasi Mitigasi.
+                    htmlByProject[projectId] = '<div class="ai-project">' +
+                        '<div class="ai-project-heading"><b>AI Cost &amp; Schedule Variance Analysis</b>' +
+                        '<span class="ai-risk" style="color:' + color + '">RISK: ' + esc(risk) + '</span></div>' +
+                        '<div class="ai-summary"><b>Ringkasan Eksekutif:</b><p>' + esc(d.ai_summary || '-') + '</p></div>' +
+                        '<div class="ai-mitigations"><b>Rekomendasi Mitigasi:</b>' + recHtml + '</div>' +
+                        '</div>';
                 }
                 if (completed === projectIds.length) {
                     if (loading) loading.remove();
