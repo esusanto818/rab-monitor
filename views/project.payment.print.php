@@ -54,7 +54,8 @@ $paymentId = intval($_GET['id'] ?? 0);
             body { background: #fff; }
             .toolbar { display: none; }
             .sheet { border: none; margin: 0; width: auto; min-height: 0; padding: 0; }
-            .ai-section, .ai-project { break-inside: avoid; }
+            .ai-section, .ai-project { break-inside: avoid; page-break-inside: avoid; }
+            .ai-section.force-page-break { break-before: page; page-break-before: always; }
         }
         @media screen and (max-width: 760px) {
             .sheet { width: 100%; margin: 0; padding: 18px; }
