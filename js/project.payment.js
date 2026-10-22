@@ -301,7 +301,55 @@ Ext.onReady(function () {
     }
 
     function printReceipt(id) {
-        window.open(PRINT_URL + encodeURIComponent(id), '_blank', 'width=900,height=700,scrollbars=yes,resizable=yes');
+        id = parseInt(id, 10);
+        if (!id || id < 1) {
+            Ext.Msg.alert('Pilih Pembayaran', 'Pilih satu pembayaran terlebih dahulu.');
+            return;
+        }
+        // Buka langsung dari interaksi klik supaya tidak mudah diblokir popup blocker.
+        var w = window.open(PRINT_URL + encodeURIComponent(id), '_blank',
+                            'width=1000,height=800,scrollbars=yes,resizable=yes');
+        if (!w) {
+            Ext.Msg.alert('Popup diblokir', 'Izinkan pop-up untuk situs ini, lalu klik Printing kembali.');
+        }
+    }
+
+    // Kaitkan tombol Printing/Cetak di toolbar halaman utama.
+    function bindMainPrintButton() {
+        var selectors = ['#printData', '#printing', '#printBtn', '#btnPrint',
+                         '#btnPrinting', '#cetakData', '#printReceipt'];
+        var candidates = [];
+        Ext.each(selectors, function (sel) {
+            var el = document.querySelector(sel);
+            if (el) candidates.push(el);
+        });
+
+        // Template lama terkadang memakai tooltip "Printing" tanpa ID yang jelas.
+        var all = document.querySelectorAll('button, a, input[type="button"], input[type="submit"], .x-btn');
+        for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            var label = ((el.getAttribute('title') || '') + ' ' +
+                         (el.getAttribute('aria-label') || '') + ' ' +
+                         (el.innerText || el.value || '')).toLowerCase();
+            if (label.indexOf('printing') >= 0 || label.indexOf('cetak') >= 0 ||
+                label.indexOf('print tanda terima') >= 0) {
+                if (candidates.indexOf(el) < 0) candidates.push(el);
+            }
+        }
+
+        Ext.each(candidates, function (el) {
+            if (el.id === 'ppBtnPrint' || el.getAttribute('data-pp-print-bound') === '1') return;
+            el.setAttribute('data-pp-print-bound', '1');
+            el.addEventListener('click', function (ev) {
+                if (!dataRecord || !dataRecord.id) {
+                    if (ev && ev.preventDefault) ev.preventDefault();
+                    Ext.Msg.alert('Pilih Pembayaran', 'Pilih satu baris pembayaran pada grid terlebih dahulu.');
+                    return;
+                }
+                if (ev && ev.preventDefault) ev.preventDefault();
+                printReceipt(dataRecord.id);
+            }, true);
+        });
     }
 
     // ------------------------------------------------------------
@@ -418,6 +466,10 @@ Ext.onReady(function () {
     }
     editDataDisable();
     updateMainButtons();
+    bindMainPrintButton();
+    // Beberapa layout merender toolbar sedikit terlambat.
+    setTimeout(bindMainPrintButton, 250);
+    setTimeout(bindMainPrintButton, 1000);
 
     // ------------------------------------------------------------
     // 3. Editor Pembayaran

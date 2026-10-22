@@ -1,132 +1,187 @@
 /*
-  Document      : project.payment.print.js
-  Description   : Isi halaman cetak Tanda Terima Pembayaran Termin (views/project.payment.print.php).
-                  Tanpa ExtJS: ambil data lewat XMLHttpRequest ke php-crud/project.paymentCRD.php (task=load_payment),
-                  lalu render ke <div id="receipt">. Mendukung pembayaran multi proyek & multi currency.
-  Pemakaian     : window.PAYMENT_ID diisi oleh project.payment.print.php.
-  Lokasi file   : /rab-project/js/project.payment.print.js
-*/
+ * project.payment.print.js
+ * Memuat data tanda terima melalui project.paymentCRD.php (task=load_payment),
+ * lalu menampilkan hasil analisis AI terbaru untuk setiap proyek terkait.
+ * PHP cetak hanya berisi kerangka HTML/CSS.
+ */
 (function () {
-    var CRD = '/rab-project/php-crud/project.paymentCRD.php';
-    // Isi identitas perusahaan untuk kop tanda terima
-    var COMPANY_NAME = 'PT. NAMA PERUSAHAAN';              // GANTI sesuai perusahaan
-    var COMPANY_ADDR = 'Alamat perusahaan, kota - telp';    // GANTI sesuai perusahaan
+    'use strict';
 
-    var METHOD_LABEL = { BANK_TRANSFER: 'Transfer Bank', CASH: 'Tunai', GIRO: 'Giro', CEK: 'Cek' };
-    var box = document.getElementById('receipt');
+    var paymentId = parseInt(window.PAYMENT_ID, 10) || 0;
+    var endpoint = window.PAYMENT_CRD_URL || '/rab-project/php-crud/project.paymentCRD.php';
+    var root = document.getElementById('receipt');
 
-    function enc(v) {
-        return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    function esc(value) {
+        return String(value === null || value === undefined ? '' : value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
-    function fmt(v) { return (parseFloat(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-    function fmtRate(v) { return (parseFloat(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 }); }
-    function fmtDate(s) {                                   // 'YYYY-MM-DD' -> 'DD/MM/YYYY'
-        var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
-        return m ? (m[3] + '/' + m[2] + '/' + m[1]) : (s || '-');
+    function num(value) {
+        var n = parseFloat(value);
+        return isFinite(n) ? n : 0;
     }
-    function showError(msg) { box.innerHTML = '<div class="err">' + enc(msg) + '</div>'; }
-
-    // ---- terbilang (Bahasa Indonesia) ----
-    var S = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas'];
-    function sayInt(n) {
-        n = Math.floor(n);
-        if (n < 12) return S[n];
-        if (n < 20) return sayInt(n - 10) + ' belas';
-        if (n < 100) return sayInt(n / 10) + ' puluh' + (n % 10 ? ' ' + sayInt(n % 10) : '');
-        if (n < 200) return 'seratus' + (n - 100 ? ' ' + sayInt(n - 100) : '');
-        if (n < 1000) return sayInt(n / 100) + ' ratus' + (n % 100 ? ' ' + sayInt(n % 100) : '');
-        if (n < 2000) return 'seribu' + (n - 1000 ? ' ' + sayInt(n - 1000) : '');
-        if (n < 1e6) return sayInt(n / 1e3) + ' ribu' + (n % 1e3 ? ' ' + sayInt(n % 1e3) : '');
-        if (n < 1e9) return sayInt(n / 1e6) + ' juta' + (n % 1e6 ? ' ' + sayInt(n % 1e6) : '');
-        if (n < 1e12) return sayInt(n / 1e9) + ' miliar' + (n % 1e9 ? ' ' + sayInt(n % 1e9) : '');
-        if (n < 1e15) return sayInt(n / 1e12) + ' triliun' + (n % 1e12 ? ' ' + sayInt(n % 1e12) : '');
-        return String(n);
+    function money(value) {
+        return num(value).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
-    function terbilang(v) {
-        v = Math.round((parseFloat(v) || 0) * 100) / 100;
-        var whole = Math.floor(v), cents = Math.round((v - whole) * 100);
-        var t = whole === 0 ? 'nol' : sayInt(whole);
-        if (cents > 0) t += ' koma ' + (cents < 10 ? 'nol ' : '') + sayInt(cents);
-        return t.charAt(0).toUpperCase() + t.slice(1) + ' rupiah';
+    function dateId(value) {
+        if (!value) return '-';
+        var s = String(value).substring(0, 10);
+        var p = s.split('-');
+        return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : esc(value);
     }
-
-    function render(d) {
-        var h = d.header, items = d.items || [];
-        var cur = h.currency_code || 'IDR', foreign = (cur !== 'IDR');
-        var rows = '', allocCur = 0, i;
-
-        for (i = 0; i < items.length; i++) {
-            var it = items[i];
-            allocCur += parseFloat(it.amount_cur) || 0;
-            rows += '<tr>' +
-                    '<td>' + (i + 1) + '</td>' +
-                    '<td>' + enc(it.project_name) + '</td>' +
-                    '<td>' + enc(it.inv_no) + '<br/>' + enc(it.termin_name) + (it.percentage !== null ? ' (' + fmt(it.percentage) + '%)' : '') + '</td>' +
-                    '<td class="r-al">' + fmt(it.invoice_amount) + '</td>' +
-                    '<td class="r-al">' + fmt(it.amount_paid) + '</td>' +
-                    '<td class="r-al">' + fmt(it.sisa_after) + '</td>' +
-                    (foreign ? '<td class="r-al">' + fmt(it.amount_cur) + '</td>' : '') +
-                    '</tr>';
+    function methodLabel(value) {
+        var map = { BANK_TRANSFER: 'Transfer Bank', CASH: 'Tunai', GIRO: 'Giro', CEK: 'Cek' };
+        return map[String(value || '').toUpperCase()] || value || '-';
+    }
+    function request(params, callback) {
+        var xhr = new XMLHttpRequest();
+        var body = Object.keys(params).map(function (k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k] === undefined ? '' : params[k]);
+        }).join('&');
+        xhr.open('POST', endpoint, true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            var response;
+            try { response = JSON.parse(xhr.responseText); }
+            catch (e) { callback(new Error('Respons server bukan JSON yang valid.')); return; }
+            if (xhr.status < 200 || xhr.status >= 300) {
+                callback(new Error(response.message || 'Permintaan ke server gagal.'));
+                return;
+            }
+            callback(null, response);
+        };
+        xhr.onerror = function () { callback(new Error('Tidak dapat terhubung ke server.')); };
+        xhr.send(body);
+    }
+    function fail(message) {
+        root.innerHTML = '<div class="err">' + esc(message) + '</div>';
+    }
+    function renderAiPlaceholder(projects) {
+        if (!projects.length) {
+            return '<section class="ai-section"><h3>Hasil Analisis AI — Varian Anggaran & Risiko</h3>' +
+                '<p>Tidak ditemukan proyek yang terkait dengan pembayaran ini.</p></section>';
         }
-        if (!items.length) rows = '<tr><td colspan="' + (foreign ? 7 : 6) + '" style="text-align:center;">Tidak ada alokasi termin.</td></tr>';
-
-        var colsBefore = 4;     // No, Proyek, Termin, Tagihan
-        var totalRows =
-            '<tr><td colspan="' + colsBefore + '" class="r-al"><b>Total Dialokasikan</b></td><td class="r-al"><b>' + fmt(h.allocated_amount) + '</b></td><td></td>' +
-            (foreign ? '<td class="r-al"><b>' + fmt(allocCur) + '</b></td>' : '') + '</tr>';
-        if (h.excess_amount > 0.01) {
-            totalRows += '<tr><td colspan="' + colsBefore + '" class="r-al">Lebih Bayar (deposit client)</td><td class="r-al">' + fmt(h.excess_amount) + '</td><td></td>' +
-                         (foreign ? '<td class="r-al">' + fmt((parseFloat(h.total_amount_cur) || 0) - allocCur) + '</td>' : '') + '</tr>';
+        return '<section class="ai-section" id="aiSection"><h3>Hasil Analisis AI — Varian Anggaran & Risiko Proyek</h3>' +
+            '<p id="aiLoading">Memuat hasil analisis AI terbaru...</p><div id="aiResults"></div>' +
+            '<p class="muted">Hasil AI merupakan informasi pendukung dan perlu ditinjau bersama data proyek aktual.</p></section>';
+    }
+    function renderReceipt(payload) {
+        var h = payload.header || {};
+        var items = payload.items || [];
+        var currency = h.currency_code || 'IDR';
+        var foreign = currency !== 'IDR';
+        var rows = '';
+        var projectMap = {};
+        items.forEach(function (item) {
+            projectMap[String(item.project_id)] = item.project_name || ('Proyek #' + item.project_id);
+            rows += '<tr><td>' + esc(item.project_name) + '</td><td>' + esc(item.termin_name) +
+                (item.percentage !== null && item.percentage !== undefined ? ' (' + money(item.percentage) + '%)' : '') +
+                '</td><td>' + esc(item.inv_no) + '</td><td class="r-al">' + money(item.invoice_amount) +
+                '</td><td class="r-al">' + money(item.amount_paid) + '</td>' +
+                (foreign ? '<td class="r-al">' + money(item.amount_cur) + '</td>' : '') + '</tr>';
+        });
+        if (!items.length) {
+            rows = '<tr><td colspan="' + (foreign ? 6 : 5) + '" style="text-align:center">Tidak ada rincian alokasi termin.</td></tr>';
         }
-        totalRows += '<tr><td colspan="' + colsBefore + '" class="r-al"><b>Total Diterima</b></td><td class="r-al"><b>' + fmt(h.total_amount) + '</b></td><td></td>' +
-                     (foreign ? '<td class="r-al"><b>' + fmt(h.total_amount_cur) + '</b></td>' : '') + '</tr>';
+        var projectIds = Object.keys(projectMap);
+        var totalRows = '<tr><td colspan="' + (foreign ? 4 : 3) + '" class="r-al"><b>Total Dialokasikan (IDR)</b></td>' +
+            '<td class="r-al"><b>' + money(h.allocated_amount) + '</b></td>' +
+            (foreign ? '<td></td>' : '') + '</tr>';
+        if (num(h.excess_amount) > 0.01) {
+            totalRows += '<tr><td colspan="' + (foreign ? 4 : 3) + '" class="r-al"><b>Lebih Bayar (IDR)</b></td>' +
+                '<td class="r-al">' + money(h.excess_amount) + '</td>' + (foreign ? '<td></td>' : '') + '</tr>';
+        }
+        totalRows += '<tr><td colspan="' + (foreign ? 4 : 3) + '" class="r-al"><b>Total Diterima (' + esc(currency) + ')</b></td>' +
+            '<td class="r-al"><b>' + money(h.total_amount_cur !== undefined ? h.total_amount_cur : h.total_amount) + '</b></td>' +
+            (foreign ? '<td></td>' : '') + '</tr>';
+        if (foreign) {
+            totalRows += '<tr><td colspan="4" class="r-al"><b>Nilai setara IDR</b></td><td class="r-al">' + money(h.total_amount) + '</td><td></td></tr>';
+        }
 
-        var accountTxt = h.account_name ? (enc(h.account_code) + ' - ' + enc(h.account_name)) : '-';
-        var html =
-            '<div class="hdr">' +
-              '<div class="l"><div class="co-name">' + enc(COMPANY_NAME) + '</div><div class="co-addr">' + enc(COMPANY_ADDR) + '</div></div>' +
-              '<div class="r"><div class="title">TANDA TERIMA PEMBAYARAN</div><div>No: <b>' + enc(h.payment_no) + '</b></div></div>' +
-            '</div>' +
-            '<table class="meta" style="margin-top:10px;">' +
-              '<tr><td class="k">Telah diterima dari</td><td class="s">:</td><td><b>' + enc(h.client_name) + '</b></td></tr>' +
-              (h.client_address ? '<tr><td class="k">Alamat</td><td class="s">:</td><td>' + enc(h.client_address) + '</td></tr>' : '') +
-              '<tr><td class="k">Tanggal</td><td class="s">:</td><td>' + fmtDate(h.payment_date) + '</td></tr>' +
-              '<tr><td class="k">Metode</td><td class="s">:</td><td>' + enc(METHOD_LABEL[h.payment_method] || h.payment_method || '-') + '</td></tr>' +
-              '<tr><td class="k">Akun Kas/Bank</td><td class="s">:</td><td>' + accountTxt + '</td></tr>' +
-              (h.reference_no ? '<tr><td class="k">No. Referensi</td><td class="s">:</td><td>' + enc(h.reference_no) + '</td></tr>' : '') +
-              (h.notes ? '<tr><td class="k">Catatan</td><td class="s">:</td><td>' + enc(h.notes) + '</td></tr>' : '') +
-            '</table>' +
-            '<div class="amount-box">Jumlah Diterima: IDR ' + fmt(h.total_amount) +
-              (foreign ? ' <span style="font-weight:normal;font-size:12px;">(' + enc(cur) + ' ' + fmt(h.total_amount_cur) + ' &times; kurs ' + fmtRate(h.exch_rate) + ')</span>' : '') +
-            '</div>' +
-            '<div class="terbilang">Terbilang: ' + enc(terbilang(h.total_amount)) + '</div>' +
-            '<div>Untuk pembayaran termin berikut:</div>' +
-            '<table class="items"><thead><tr>' +
-              '<th>No</th><th>Proyek</th><th>Termin</th><th class="r-al">Tagihan (IDR)</th><th class="r-al">Dibayar (IDR)</th><th class="r-al">Sisa Setelah Bayar</th>' +
-              (foreign ? '<th class="r-al">Dibayar (' + enc(cur) + ')</th>' : '') +
-            '</tr></thead><tbody>' + rows + totalRows + '</tbody></table>' +
-            '<div class="sign">' +
-              '<div>Yang Menyerahkan<br/><span class="line">' + enc(h.client_name) + '</span></div>' +
-              '<div>Yang Menerima<br/><span class="line">' + enc(h.created_by_name || '') + '</span></div>' +
-            '</div>';
+        root.innerHTML =
+            '<header class="hdr"><div class="l"><div class="co-name">RAB-Monitor</div><div class="co-addr">Sistem Monitoring Proyek</div></div>' +
+            '<div class="r"><b>TANDA TERIMA PEMBAYARAN</b><div>No. ' + esc(h.payment_no) + '</div></div></header>' +
+            '<h1 class="title">TANDA TERIMA</h1>' +
+            '<p>Telah diterima pembayaran dari:</p>' +
+            '<table class="meta"><tr><td class="k">Nama Client</td><td><b>' + esc(h.client_name) + '</b></td>' +
+            '<td class="k">Tanggal Pembayaran</td><td><b>' + dateId(h.payment_date) + '</b></td></tr>' +
+            '<tr><td class="k">Metode Pembayaran</td><td><b>' + esc(methodLabel(h.payment_method)) + '</b></td>' +
+            '<td class="k">Mata Uang</td><td><b>' + esc(currency) + (foreign ? ' (kurs ' + money(h.exch_rate) + ')' : '') + '</b></td></tr>' +
+            '<tr><td class="k">Akun Penerimaan</td><td><b>' + esc([h.account_code, h.account_name].filter(Boolean).join(' - ') || '-') + '</b></td>' +
+            '<td class="k">Referensi</td><td><b>' + esc(h.reference_no || '-') + '</b></td></tr></table>' +
+            '<table class="items"><thead><tr><th>Proyek</th><th>Termin</th><th>No. Invoice</th><th class="r-al">Tagihan (IDR)</th><th class="r-al">Dibayar (IDR)</th>' +
+            (foreign ? '<th class="r-al">Dibayar (' + esc(currency) + ')</th>' : '') +
+            '</tr></thead><tbody>' + rows + '</tbody><tfoot>' + totalRows + '</tfoot></table>' +
+            (h.notes ? '<p><b>Catatan:</b> ' + esc(h.notes) + '</p>' : '') +
+            renderAiPlaceholder(projectIds) +
+            '<div class="sign"><div><p>Diterima oleh,</p><div class="space"></div><div class="line">' + esc(h.client_name) + '</div></div>' +
+            '<div><p>Diterima dari / Petugas,</p><div class="space"></div><div class="line">' + esc(h.created_by_name || 'Petugas Penerima') + '</div></div></div>' +
+            '<div class="footer">Dokumen dihasilkan oleh RAB-Monitor · ' + esc(h.payment_no) + '</div>';
 
-        box.innerHTML = html;
-        document.title = 'Tanda Terima ' + (h.payment_no || '');
+        loadAiResults(projectIds, projectMap);
+    }
+    function loadAiResults(projectIds, projectMap) {
+        var loading = document.getElementById('aiLoading');
+        var results = document.getElementById('aiResults');
+        if (!projectIds.length) {
+            if (loading) loading.textContent = 'Tidak ada proyek yang terhubung dengan pembayaran ini.';
+            return;
+        }
+        var completed = 0;
+        var htmlByProject = {};
+        projectIds.forEach(function (projectId) {
+            // Endpoint AI yang sama dengan tombol "Analisis Varian AI" pada halaman detail.
+            request({ task: 'analyze_project_variance', project_id: projectId }, function (err, res) {
+                completed++;
+                var projectName = projectMap[projectId];
+                if (err || !res || !res.success || !res.data) {
+                    htmlByProject[projectId] = '<div class="ai-project"><b>' + esc(projectName) + '</b><p>Hasil analisis AI belum dapat dimuat' +
+                        (res && res.message ? ': ' + esc(res.message) : '.') + '</p></div>';
+                } else {
+                    var d = res.data;
+                    var risk = String(d.risk_level || 'BELUM DIKETAHUI').toUpperCase();
+                    var color = (risk === 'HIGH' || risk === 'CRITICAL') ? '#b42318' : (risk === 'MEDIUM' ? '#946200' : '#167347');
+                    var recs = Array.isArray(d.recommendations) ? d.recommendations : [];
+                    var recHtml = recs.length ? '<ul class="ai-recommendations">' + recs.map(function (rec) {
+                        return '<li>' + esc(rec) + '</li>';
+                    }).join('') + '</ul>' : '<p>Tidak ada rekomendasi tersimpan.</p>';
+                    var variance = '';
+                    if (d.total_budget !== undefined || d.total_actual !== undefined) {
+                        variance = '<p><b>Anggaran:</b> ' + money(d.total_budget) + ' IDR &nbsp;|&nbsp; <b>Realisasi:</b> ' +
+                            money(d.total_actual) + ' IDR &nbsp;|&nbsp; <b>Varian:</b> ' + money(d.variance_amount) +
+                            ' IDR (' + money(d.variance_percentage) + '%)</p>';
+                    }
+                    htmlByProject[projectId] = '<div class="ai-project"><b>' + esc(projectName) + '</b>' +
+                        '<p><span class="ai-risk" style="color:' + color + '">Tingkat Risiko: ' + esc(risk) + '</span></p>' +
+                        '<p class="ai-summary"><b>Ringkasan Eksekutif:</b><br>' + esc(d.ai_summary || '-') + '</p>' +
+                        variance + '<b>Rekomendasi Mitigasi:</b>' + recHtml + '</div>';
+                }
+                if (completed === projectIds.length) {
+                    if (loading) loading.remove();
+                    results.innerHTML = projectIds.map(function (id) { return htmlByProject[id]; }).join('');
+                }
+            });
+        });
     }
 
-    // ---- ambil data ----
-    if (!window.PAYMENT_ID) { showError('ID pembayaran tidak valid.'); return; }
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', CRD, true);
-    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-    xhr.onreadystatechange = function () {
-        if (xhr.readyState !== 4) return;
-        if (xhr.status !== 200) { showError('Gagal memuat data (HTTP ' + xhr.status + ').' + (xhr.status === 401 ? ' Sesi berakhir, silakan login ulang.' : '')); return; }
-        var res;
-        try { res = JSON.parse(xhr.responseText); } catch (e) { showError('Respons server tidak valid (cek error_log PHP).'); return; }
-        if (!res.success) { showError(res.message || 'Gagal memuat data pembayaran.'); return; }
-        try { render(res.data); } catch (e2) { showError('Gagal menampilkan tanda terima: ' + e2.message); }
-    };
-    xhr.onerror = function () { showError('Gagal menghubungi server.'); };
-    xhr.send('task=load_payment&id=' + encodeURIComponent(window.PAYMENT_ID));
+    document.getElementById('btnPrintReceipt').addEventListener('click', function () { window.print(); });
+    document.getElementById('btnCloseReceipt').addEventListener('click', function () { window.close(); });
+
+    if (!paymentId) {
+        fail('ID pembayaran tidak valid.');
+        return;
+    }
+    request({ task: 'load_payment', id: paymentId }, function (err, res) {
+        if (err) {
+            fail('Gagal memuat tanda terima: ' + err.message);
+            return;
+        }
+        if (!res || !res.success || !res.data || !res.data.header) {
+            fail((res && res.message) || 'Data pembayaran tidak ditemukan.');
+            return;
+        }
+        renderReceipt(res.data);
+    });
 })();

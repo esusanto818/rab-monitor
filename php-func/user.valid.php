@@ -2,7 +2,7 @@
 // Izinkan ngrok melewati halaman peringatan secara otomatis
 header('ngrok-skip-browser-warning: 1');
 
-define('BASE_PATH', '/var/www/html/proyek');
+define('BASE_PATH', '/var/www/html/rab-project');
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
