@@ -1,19 +1,7 @@
 /*
   Document      : project.payment.js
-  Description   : Pembayaran Termin per CLIENT (multi proyek). Grid utama = daftar pembayaran dari client; klik baris ->
-                   panel detail di bawah grid (alokasi per termin + tombol Cetak Tanda Terima / Hapus).
-                   Add membuka editor: pilih CLIENT -> daftar termin yang masih punya sisa tagihan dari SEMUA proyek client tsb
-                   -> isi "Bayar Sekarang" per termin (bisa alokasi otomatis berurutan dari tanggal termin, lintas proyek).
-                   Tombol "+ Tambah Termin" membuat tagihan termin baru (project_invoices) untuk salah satu proyek client terpilih.
-                   Pembayaran tidak bisa diedit; koreksi = hapus (reverse) lalu input ulang.
-                   Kelebihan bayar (jumlah diterima > total alokasi) disimpan di excess_amount.
-                   [MULTI-PROYEK] satu pembayaran boleh mengalokasikan ke termin beberapa proyek, selama client-nya sama.
-                   [MULTI-CURRENCY] pembayaran punya mata uang + kurs (default IDR, kurs KMK pada tanggal bayar). Jumlah Diterima & Bayar Sekarang
-                   diisi dalam mata uang pembayaran; tagihan termin tetap IDR, nilai setara IDR = nilai x kurs (dibatasi sisa tagihan).
-                   [JURNAL] simpan pembayaran memposting jurnal otomatis (Kas/Bank wajib dipilih); hapus pembayaran menghapus jurnalnya.
-                   [AI-VARIANCE] Integrasi Analisis Varian Anggaran dan Risiko Proyek menggunakan Google Gemini API.
+  Description   : Pembayaran Termin per CLIENT (multi proyek).
   Backend       : /rab-project/php-crud/project.paymentCRD.php
-  Cetak         : /rab-project/views/project.payment.print.php?id=<id>  (project.payment.print.js)
 */
 
 Ext.onReady(function () {
@@ -22,9 +10,9 @@ Ext.onReady(function () {
 
     var CRD = '/rab-project/php-crud/project.paymentCRD.php';
     var PRINT_URL = '/rab-project/views/project.payment.print.php?id=';
-    var ACCESS_ADD = 2;      // level akses minimal: input pembayaran / termin
-    var ACCESS_EDIT = 3;     // level akses minimal: hapus pembayaran
-    var VEPS = 0.01;         // toleransi nilai
+    var ACCESS_ADD = 2;
+    var ACCESS_EDIT = 3;
+    var VEPS = 0.01;
     var TERMIN_RULE_PCT = { 1: 30, 2: 20 };   
     var DP_PCT = 30;                          
     var allocNote = '';                       
@@ -44,7 +32,7 @@ Ext.onReady(function () {
     }
 
     // ------------------------------------------------------------
-    // [AI-VARIANCE] Fungsi Pendukung Analisis AI
+    // [AI-VARIANCE] Fungsi Analisis Per Proyek Individual
     // ------------------------------------------------------------
     function triggerAiAnalysis(projectId) {
         if (!projectId) {
@@ -73,7 +61,7 @@ Ext.onReady(function () {
     }
 
     function renderAiResultPanel(d) {
-        var riskColor = '#2e9e4f'; // LOW
+        var riskColor = '#2e9e4f';
         if (d.risk_level === 'MEDIUM') riskColor = '#e6a817';
         else if (d.risk_level === 'HIGH' || d.risk_level === 'CRITICAL') riskColor = '#e05353';
 
@@ -86,10 +74,9 @@ Ext.onReady(function () {
             recHtml = '<li>Tidak ada rekomendasi khusus.</li>';
         }
 
-        // Tampilan kontras tinggi dengan padding bagian bawah yang memadai
         var html = '<div style="margin-top:15px; margin-bottom:25px; background:#111b24; border:1px solid #00bcd4; border-radius:6px; padding:18px; color:#ffffff !important;">' +
                    '<div style="font-weight:bold; font-size:15px; color:#00bcd4; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">' +
-                   '<span>&#9881; AI Cost & Schedule Variance Analysis</span>' +
+                   '<span>&#9881; AI Cost & Schedule Variance Analysis (' + enc(d.project_name || '') + ')</span>' +
                    '<span style="background:' + riskColor + '; color:#fff; padding:3px 10px; border-radius:3px; font-size:13px;">RISK: ' + enc(d.risk_level) + '</span>' +
                    '</div>' +
                    '<div style="font-size:14px; line-height:22px; margin-bottom:12px; color:#ffffff !important;">' +
@@ -110,7 +97,6 @@ Ext.onReady(function () {
         aiContainer.innerHTML = html;
         dtlDiv.style.display = 'block';
 
-        // Auto-scroll halus ke bagian bawah area detail
         setTimeout(function() {
             dtlDiv.scrollTop = dtlDiv.scrollHeight;
         }, 100);
@@ -170,13 +156,9 @@ Ext.onReady(function () {
     }
     function maxPay(remaining) { var r = curRate(); return r > 0 ? round2(remaining / r) : 0; }
 
-    // ------------------------------------------------------------
-    // 0. Panel Detail Dinamis Berbasis Persentase Tinggi Layanan
-    // ------------------------------------------------------------
     var gridContainer = document.getElementById('divMainGrid');
     var screenH = window.innerHeight || document.documentElement.clientHeight || 700;
     
-    // Alokasi porsi grid utama & panel detail mengikuti persentase tinggi layar
     var mainHeight = Math.round(screenH * 0.38);
     var dtlHeight  = Math.round(screenH * 0.45);
 
@@ -197,7 +179,6 @@ Ext.onReady(function () {
     dtlDiv.className = 'detail-panel-container';
     dtlDiv.style.display = 'none';
     
-    // Pengaturan tinggi dan scroller otomatis berbasis persentase screen
     dtlDiv.style.height = dtlHeight + 'px';
     dtlDiv.style.maxHeight = dtlHeight + 'px';
     dtlDiv.style.overflowY = 'auto';     
@@ -209,7 +190,6 @@ Ext.onReady(function () {
         gridContainer.parentNode.insertBefore(dtlDiv, gridContainer.nextSibling);
     }
 
-    // Penyesuaian dinamis saat jendela peramban diubah ukurannya (resize)
     Ext.EventManager.onWindowResize(function () {
         var newH = window.innerHeight || document.documentElement.clientHeight || 700;
         var newDtlH = Math.round(newH * 0.45);
@@ -306,7 +286,6 @@ Ext.onReady(function () {
             Ext.Msg.alert('Pilih Pembayaran', 'Pilih satu pembayaran terlebih dahulu.');
             return;
         }
-        // Buka langsung dari interaksi klik supaya tidak mudah diblokir popup blocker.
         var w = window.open(PRINT_URL + encodeURIComponent(id), '_blank',
                             'width=1000,height=800,scrollbars=yes,resizable=yes');
         if (!w) {
@@ -314,8 +293,6 @@ Ext.onReady(function () {
         }
     }
 
-    // Kaitkan tombol Printing/Cetak di toolbar halaman utama.
-    // Printing toolbar utama: cetak daftar seluruh header pembayaran, bukan tanda terima satu baris.
     function bindMainPrintButton() {
         var el = document.getElementById('printData') ||
                  document.getElementById('printing') ||
@@ -335,9 +312,6 @@ Ext.onReady(function () {
         }, true);
     }
 
-    // ------------------------------------------------------------
-    // 1. Fields & Stores
-    // ------------------------------------------------------------
     var payField = [
         { name: 'id' }, { name: 'payment_no' }, { name: 'payment_date' },
         { name: 'client_id' }, { name: 'client_name' }, { name: 'project_names' },
@@ -402,9 +376,6 @@ Ext.onReady(function () {
     });
     mainDs.load();
 
-    // ------------------------------------------------------------
-    // 2. Main Grid (Daftar Pembayaran)
-    // ------------------------------------------------------------
     var gridMain = new Ext.grid.GridPanel({
         store: mainDs,
         renderTo: 'divMainGrid',
@@ -450,13 +421,9 @@ Ext.onReady(function () {
     editDataDisable();
     updateMainButtons();
     bindMainPrintButton();
-    // Beberapa layout merender toolbar sedikit terlambat.
     setTimeout(bindMainPrintButton, 250);
     setTimeout(bindMainPrintButton, 1000);
 
-    // ------------------------------------------------------------
-    // 3. Editor Pembayaran
-    // ------------------------------------------------------------
     var itemGrid = new stdGridEditor({
         store: outDs,
         renderTo: 'editorFormGrid',
@@ -1029,9 +996,6 @@ Ext.onReady(function () {
         setTimeout(function () { fitGrid(); try { itemGrid.getView().layout(); } catch (e) {} }, 50);
     }
 
-    // ------------------------------------------------------------
-    // 4. Action Handlers
-    // ------------------------------------------------------------
     document.getElementById('addData').onclick = function () {
         if (getFormAccess() < ACCESS_ADD) {
             Ext.Msg.alert('Akses Ditolak', 'Tidak memiliki hak akses.');
