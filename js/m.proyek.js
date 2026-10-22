@@ -29,9 +29,9 @@ Ext.onReady(function () {
 
     // Perhitungan tinggi layar responsif
     var screenH = window.innerHeight || document.documentElement.clientHeight || 700;
-    var mainGridH = Math.round(screenH * 0.38);
+    var mainGridH = Math.round(screenH * 0.5);
     var mainDetailH = Math.round(screenH * 0.40);
-    var editorGridH = Math.round(screenH * 0.28);
+    var editorGridH = Math.round(screenH * 0.30);
 
     // 1. Stores
     var clientDs = new Ext.data.Store({

@@ -156,7 +156,7 @@ try {
                     - \"ai_summary\": string (ringkasan eksekutif mengenai kondisi overbudget atau efisiensi biaya proyek)
                     - \"recommendations\": array of strings (poin-poin tindakan mitigasi konkret untuk kontraktor)
                 ";
-
+                $apiKey = getenv('GOOGLE_API_KEY');
                 // Daftar model cadangan (fallback) untuk mengantisipasi trafik tinggi / error 503
                 $candidateModels = ['gemini-3.6-flash','gemini-3.5-flash-lite'];
 

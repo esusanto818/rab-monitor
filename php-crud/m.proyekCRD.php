@@ -146,7 +146,7 @@ try {
                   }
                 ]
             ";
-
+            $apiKey = getenv('GOOGLE_API_KEY');
             $candidateModels = ['gemini-3.6-flash','gemini-3.5-flash-lite'];
             $response = null; $httpCode = 0; $lastErrorMsg = '';
 
