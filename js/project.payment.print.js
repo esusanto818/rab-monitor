@@ -166,7 +166,32 @@
         });
     }
 
-    document.getElementById('btnPrintReceipt').addEventListener('click', function () { window.print(); });
+    // Ukur ruang cetak A4 sebelum mencetak. Jika analisis berikut tanda tangan/footer
+    // melewati halaman pertama, mulai bagian analisis pada halaman kedua.
+    function fitAiSectionForPrint() {
+        var section = document.getElementById('aiSection');
+        var sign = root.querySelector('.sign');
+        var footer = root.querySelector('.footer');
+        if (!section) return;
+        section.classList.remove('force-page-break');
+
+        var measure = document.createElement('div');
+        measure.style.cssText = 'position:absolute;left:-10000px;top:0;width:1px;height:267mm;visibility:hidden;';
+        document.body.appendChild(measure);
+        var printableHeight = measure.getBoundingClientRect().height;
+        document.body.removeChild(measure);
+
+        var contentEnd = section.offsetTop + section.offsetHeight;
+        if (sign) contentEnd = Math.max(contentEnd, sign.offsetTop + sign.offsetHeight);
+        if (footer) contentEnd = Math.max(contentEnd, footer.offsetTop + footer.offsetHeight);
+        if (contentEnd > printableHeight) section.classList.add('force-page-break');
+    }
+
+    window.addEventListener('beforeprint', fitAiSectionForPrint);
+    document.getElementById('btnPrintReceipt').addEventListener('click', function () {
+        fitAiSectionForPrint();
+        window.print();
+    });
     document.getElementById('btnCloseReceipt').addEventListener('click', function () { window.close(); });
 
     if (!paymentId) {
