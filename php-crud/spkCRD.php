@@ -27,7 +27,12 @@ try {
         case 'list':             SpkList(); break;
         case 'detail':           SpkDetail(); break;
         case 'lookup_projects':  SpkLookupProjects(); break;
+        case 'lookup_tasks':    SpkLookupTasks(); break; // [SPK-TASK] Task hanya dari proyek yang dipilih
         case 'lookup_materials': SpkLookupMaterials(); break;
+        case 'submit_approval': SpkSubmitApproval(); break; // [SPK-WORKFLOW]
+        case 'approve':         SpkApprove(); break;
+        case 'reject':          SpkReject(); break;
+        case 'request_verification': SpkRequestVerification(); break;
         case 'quota':            SpkQuotaInfo(); break;
         case 'save':             SpkSave(); break;
         case 'issue':            SpkIssue(); break;
@@ -81,6 +86,30 @@ function SpkItemsWithUsage($spkId) {
     return $rows;
 }
 
+// [SPK-WORKFLOW] Catat perubahan status agar keputusan SPK dapat diaudit.
+function SpkWorkflowLog($spkId, $from, $to, $action, $note = '') {
+    WhQ('INSERT INTO spk_workflow_log (spk_id, from_status, to_status, action, note, user_id, created_at) VALUES ($1,$2,$3,$4,$5,$6,now())',
+        array((int)$spkId, $from, $to, $action, $note, WhUserId()));
+}
+
+// [SPK-TASK] Daftar task proyek, sekaligus cegah task terikat ke SPK aktif lain.
+function SpkLookupTasks() {
+    $pid = (int)WhReq('project_id');
+    $exclude = (int)WhReq('exclude_id');
+    if ($pid < 1 || !WhRow('SELECT 1 FROM projects WHERE id=$1', array($pid))) { throw new WhException('Pilih proyek yang valid.'); }
+    $rows = WhRows("SELECT t.id, t.task_name, COALESCE(t.description,'') AS description,
+                           t.start_date, t.end_date, COALESCE(t.status,'') AS status
+                    FROM public.project_tasks t
+                    WHERE t.project_id=$1
+                      AND NOT EXISTS (
+                        SELECT 1 FROM spk_tasks st JOIN spk s ON s.id=st.spk_id
+                        WHERE st.task_id=t.id AND s.id<>$2
+                          AND s.workflow_status NOT IN ('Ditolak','Dibatalkan','Selesai')
+                      )
+                    ORDER BY t.start_date NULLS LAST, t.id", array($pid, $exclude));
+    WhJson(array('success'=>true,'totalCount'=>count($rows),'data'=>$rows));
+}
+
 function SpkList() {
     list($start, $limit) = WhPage();
     $q = WhReq('query');
@@ -93,7 +122,9 @@ function SpkList() {
     $params[] = $limit;  $pl = '$' . count($params);
     $params[] = $start;  $ps = '$' . count($params);
     $rows = WhRows("SELECT s.id, s.spk_no, s.spk_date, s.project_id, p.name AS project_name, s.foreman, s.description, s.status, s.remark,
-                           (SELECT COUNT(DISTINCT x.material_id) FROM spk_items x WHERE x.spk_id=s.id) AS item_count
+                           (SELECT COUNT(DISTINCT x.material_id) FROM spk_items x WHERE x.spk_id=s.id) AS item_count,
+                           (SELECT COUNT(*) FROM spk_tasks st WHERE st.spk_id=s.id) AS task_count,
+                           COALESCE(s.workflow_status,'Draft') AS workflow_status
                     FROM spk s JOIN projects p ON p.id=s.project_id
                     WHERE $where ORDER BY s.spk_date DESC, s.id DESC LIMIT $pl OFFSET $ps", $params);
     // persen terpakai = rata-rata (issue / qty SPK, maks 100%) per material
@@ -112,8 +143,11 @@ function SpkDetail() {
     $s = SpkGet($id);
     $p = WhRow('SELECT p.name, c.name AS client_name FROM projects p LEFT JOIN clients c ON c.id=p.client_id WHERE p.id=$1', array((int)$s['project_id']));
     $pay = SpkProjectPaid($s['project_id']);
-    WhJson(array('success' => true, 'header' => array_merge($s, array('project_name' => $p['name'], 'client_name' => $p['client_name'])),
-                 'pay' => $pay, 'items' => SpkItemsWithUsage($id), 'issue_count' => SpkIssueCount($id)));
+    // [SPK-TASK] Sertakan task yang terikat pada SPK di detail.
+    $tasks = WhRows("SELECT t.id, t.task_name, COALESCE(t.description,'') AS description, t.start_date, t.end_date, COALESCE(t.status,'') AS status
+                     FROM spk_tasks st JOIN public.project_tasks t ON t.id=st.task_id WHERE st.spk_id=$1 ORDER BY t.start_date NULLS LAST, t.id", array($id));
+    WhJson(array('success' => true, 'header' => array_merge($s, array('project_name' => $p['name'], 'client_name' => $p['client_name'], 'workflow_status' => $s['workflow_status'] ?? 'Draft')),
+                 'pay' => $pay, 'items' => SpkItemsWithUsage($id), 'tasks' => $tasks, 'issue_count' => SpkIssueCount($id)));
 }
 
 function SpkLookupProjects() {
@@ -147,11 +181,31 @@ function SpkSave() {
     $date = WhDate(WhPost('spk_date'), 'Tanggal SPK');
     $foreman = trim(WhPost('foreman')); $desc = trim(WhPost('description')); $remark = trim(WhPost('remark'));
     $details = WhDetails();
+    // [SPK-TASK] Task adalah lingkup kerja wajib; material boleh kosong untuk SPK non-pengeluaran material.
+    $taskRaw = WhReq('task_details');
+    $taskDetails = is_array($taskRaw) ? $taskRaw : json_decode((string)$taskRaw, true);
+    if (!is_array($taskDetails)) { throw new WhException('Daftar task SPK tidak valid.'); }
     $userId = WhUserId();
     if ($projectId < 1) { throw new WhException('Proyek wajib dipilih.'); }
     if (!WhRow('SELECT 1 FROM projects WHERE id=$1', array($projectId))) { throw new WhException('Proyek tidak ditemukan.'); }
 
-    // gabungkan baris duplikat per material; wajib material yang ada di RAB proyek
+    // [SPK-TASK] Validasi task berasal dari proyek yang sama, tidak duplikat, dan tidak dipakai SPK aktif lain.
+    $taskIds = array();
+    foreach ($taskDetails as $td) {
+        $tid = isset($td['task_id']) ? (int)$td['task_id'] : 0;
+        if ($tid < 1 || isset($taskIds[$tid])) { throw new WhException('Task SPK tidak valid atau terpilih lebih dari sekali.'); }
+        if (!WhRow('SELECT 1 FROM public.project_tasks WHERE id=$1 AND project_id=$2', array($tid, $projectId))) {
+            throw new WhException('Task yang dipilih bukan bagian dari proyek ini.');
+        }
+        if (WhRow("SELECT 1 FROM spk_tasks st JOIN spk s ON s.id=st.spk_id
+                   WHERE st.task_id=$1 AND s.id<>$2 AND s.workflow_status NOT IN ('Ditolak','Dibatalkan','Selesai') LIMIT 1", array($tid, $id))) {
+            throw new WhException('Task sudah terikat pada SPK aktif lain. Selesaikan atau batalkan SPK tersebut terlebih dahulu.');
+        }
+        $taskIds[$tid] = true;
+    }
+    if (!count($taskIds)) { throw new WhException('Pilih minimal satu task proyek untuk SPK.'); }
+
+    // Gabungkan baris duplikat per material; bila ada, material wajib berasal dari RAB proyek.
     $lines = array();
     foreach ($details as $d) {
         $mid = isset($d['material_id']) ? (int)$d['material_id'] : 0;
@@ -166,7 +220,7 @@ function SpkSave() {
         $lines[$mid]['qty'] = round($lines[$mid]['qty'] + $qty, 4);
         if (!empty($d['notes'])) { $lines[$mid]['notes'] = trim($d['notes']); }
     }
-    if (!count($lines)) { throw new WhException('Tambahkan minimal satu material.'); }
+    // Detail material bersifat opsional; bila diisi tetap divalidasi terhadap RAB dan kuota saat penerbitan.
 
     WhQ('BEGIN');
     if ($id > 0) {
@@ -175,13 +229,17 @@ function SpkSave() {
         WhQ('UPDATE spk SET spk_date=$2, project_id=$3, foreman=$4, description=$5, remark=$6, updated_at=now() WHERE id=$1',
             array($id, $date, $projectId, $foreman, $desc, $remark));
         WhQ('DELETE FROM spk_items WHERE spk_id=$1', array($id));
+        WhQ('DELETE FROM spk_tasks WHERE spk_id=$1', array($id)); // [SPK-TASK] Sinkronkan task saat draft diedit
         $spkNo = $s['spk_no'];
     } else {
         $spkNo = CreateRefNo('spk', 'spk_no', 'SPK');
-        $h = WhRow("INSERT INTO spk (spk_no, spk_date, project_id, foreman, description, status, remark, created_by)
-                    VALUES ($1,$2,$3,$4,$5,'Draft',$6,$7) RETURNING id",
+        $h = WhRow("INSERT INTO spk (spk_no, spk_date, project_id, foreman, description, status, workflow_status, remark, created_by)
+                    VALUES ($1,$2,$3,$4,$5,'Draft','Draft',$6,$7) RETURNING id",
                    array($spkNo, $date, $projectId, $foreman, $desc, $remark, $userId));
         $id = (int)$h['id'];
+    }
+    foreach (array_keys($taskIds) as $tid) {
+        WhQ('INSERT INTO spk_tasks (spk_id, task_id) VALUES ($1,$2)', array($id, (int)$tid));
     }
     foreach ($lines as $mid => $ln) {
         $m = WhRow('SELECT unit FROM materials WHERE id=$1', array($mid));
@@ -189,10 +247,52 @@ function SpkSave() {
             array($id, $mid, $ln['qty'], $m ? $m['unit'] : '', $ln['notes']));
     }
     WhQ('COMMIT');
+    // [SPK-WORKFLOW] Catat pembuatan/perubahan draft pada audit trail.
+    SpkWorkflowLog($id, $id > 0 ? 'Draft' : '', 'Draft', 'save', 'Draft SPK disimpan');
     WhOk('SPK tersimpan (Draft). No: ' . $spkNo, array('id' => $id, 'spk_no' => $spkNo));
 }
 
 // Terbitkan: syarat sudah ada pembayaran termin + qty tiap material dalam kuota
+// [SPK-WORKFLOW] Ajukan draft ke pemeriksa/penyetuju.
+function SpkSubmitApproval() {
+    WhRequirePost(); SpkNeed(SPK_ACCESS_EDIT, 'Anda tidak memiliki hak akses untuk mengajukan SPK.');
+    $id=(int)WhPost('id'); WhQ('BEGIN'); $s=SpkGet($id,true);
+    if ($s['status']!=='Draft' || ($s['workflow_status'] ?? 'Draft')!=='Draft') { throw new WhException('Hanya draft yang belum diajukan dapat dikirim untuk persetujuan.'); }
+    $n=WhRow('SELECT COUNT(*) AS n FROM spk_tasks WHERE spk_id=$1',array($id));
+    if ((int)$n['n']<1) { throw new WhException('SPK harus memiliki minimal satu task proyek.'); }
+    WhQ("UPDATE spk SET workflow_status='Menunggu Persetujuan', updated_at=now() WHERE id=$1",array($id));
+    SpkWorkflowLog($id,'Draft','Menunggu Persetujuan','submit_approval','SPK diajukan untuk persetujuan');
+    WhQ('COMMIT'); WhOk('SPK diajukan untuk persetujuan.');
+}
+
+// [SPK-WORKFLOW] Persetujuan hanya oleh level akses 3 atau lebih.
+function SpkApprove() {
+    WhRequirePost(); SpkNeed(SPK_ACCESS_ACTION, 'Anda tidak memiliki hak akses untuk menyetujui SPK.');
+    $id=(int)WhPost('id'); WhQ('BEGIN'); $s=SpkGet($id,true);
+    if (($s['workflow_status'] ?? 'Draft')!=='Menunggu Persetujuan') { throw new WhException('SPK tidak sedang menunggu persetujuan.'); }
+    WhQ("UPDATE spk SET workflow_status='Disetujui', approved_at=now(), approved_by=$2, updated_at=now() WHERE id=$1",array($id,WhUserId()));
+    SpkWorkflowLog($id,'Menunggu Persetujuan','Disetujui','approve','SPK disetujui');
+    WhQ('COMMIT'); WhOk('SPK disetujui. Tahap berikutnya adalah penerbitan SPK.');
+}
+
+function SpkReject() {
+    WhRequirePost(); SpkNeed(SPK_ACCESS_ACTION, 'Anda tidak memiliki hak akses untuk menolak SPK.');
+    $id=(int)WhPost('id'); $note=trim(WhPost('note')); WhQ('BEGIN'); $s=SpkGet($id,true);
+    if (($s['workflow_status'] ?? 'Draft')!=='Menunggu Persetujuan') { throw new WhException('SPK tidak sedang menunggu persetujuan.'); }
+    WhQ("UPDATE spk SET workflow_status='Ditolak', updated_at=now(), remark=CASE WHEN $2='' THEN remark ELSE COALESCE(remark,'') || E'\\nPenolakan: ' || $2 END WHERE id=$1",array($id,$note));
+    SpkWorkflowLog($id,'Menunggu Persetujuan','Ditolak','reject',$note);
+    WhQ('COMMIT'); WhOk('SPK ditolak. Draft perlu diperbaiki sebelum diajukan kembali.');
+}
+
+function SpkRequestVerification() {
+    WhRequirePost(); SpkNeed(SPK_ACCESS_EDIT, 'Anda tidak memiliki hak akses untuk mengajukan verifikasi.');
+    $id=(int)WhPost('id'); $note=trim(WhPost('note')); WhQ('BEGIN'); $s=SpkGet($id,true);
+    if ($s['status']!=='Diterbitkan' || ($s['workflow_status'] ?? '')!=='Pelaksanaan') { throw new WhException('Hanya SPK yang sedang dalam pelaksanaan dapat diajukan verifikasi.'); }
+    WhQ("UPDATE spk SET workflow_status='Menunggu Verifikasi', updated_at=now() WHERE id=$1",array($id));
+    SpkWorkflowLog($id,'Pelaksanaan','Menunggu Verifikasi','request_verification',$note);
+    WhQ('COMMIT'); WhOk('SPK diajukan untuk verifikasi.');
+}
+
 function SpkIssue() {
     WhRequirePost();
     SpkNeed(SPK_ACCESS_ACTION, 'Anda tidak memiliki hak akses untuk menerbitkan SPK.');
@@ -200,15 +300,20 @@ function SpkIssue() {
     WhQ('BEGIN');
     $s = SpkGet($id, true);
     if ($s['status'] !== 'Draft') { throw new WhException('Hanya SPK berstatus Draft yang dapat diterbitkan.'); }
+    if (($s['workflow_status'] ?? 'Draft') !== 'Disetujui') { throw new WhException('SPK harus disetujui terlebih dahulu sebelum diterbitkan.'); }
     $pid = (int)$s['project_id'];
     WhLock(0, 900000 + $pid);      // kunci kuota proyek agar dua SPK tidak menghabiskan kuota yang sama
 
-    $qt = SpkMaterialQuota($pid, $id);
-    $pay = $qt['pay'];
-    if ($pay['paid_amount'] <= 0) { throw new WhException('SPK belum dapat diterbitkan: proyek ini belum menerima pembayaran termin.'); }
-    if ($pay['allowed_pct'] <= 0) { throw new WhException('SPK belum dapat diterbitkan: nilai kontrak proyek belum diisi atau pembayaran belum tercatat.'); }
+    $itemsForIssue = SpkItemsWithUsage($id);
+    // [SPK-TASK] SPK pekerjaan tanpa material tetap dapat diterbitkan; aturan pembayaran/kuota hanya untuk SPK yang memuat material.
+    if (count($itemsForIssue)) {
+        $qt = SpkMaterialQuota($pid, $id);
+        $pay = $qt['pay'];
+        if ($pay['paid_amount'] <= 0) { throw new WhException('SPK material belum dapat diterbitkan: proyek ini belum menerima pembayaran termin.'); }
+        if ($pay['allowed_pct'] <= 0) { throw new WhException('SPK material belum dapat diterbitkan: nilai kontrak proyek belum diisi atau pembayaran belum tercatat.'); }
+    } else { $qt = array('materials'=>array(), 'pay'=>array('paid_amount'=>0,'allowed_pct'=>0,'paid_pct'=>0)); }
 
-    foreach (SpkItemsWithUsage($id) as $it) {
+    foreach ($itemsForIssue as $it) {
         $mid = (int)$it['material_id'];
         if (!isset($qt['materials'][$mid])) { throw new WhException($it['material_name'] . ' tidak ada di RAB proyek.'); }
         $a = $qt['materials'][$mid]['available'];
@@ -218,7 +323,9 @@ function SpkIssue() {
                 WhFmt($pay['paid_pct']) . '% x ' . SPK_PAID_MULTIPLIER . '), dikurangi SPK aktif dan pemakaian yang sudah ada.');
         }
     }
-    WhQ("UPDATE spk SET status='Diterbitkan', issued_at=now(), issued_by=$2, updated_at=now() WHERE id=$1", array($id, $userId));
+    $oldWorkflow = $s['workflow_status'] ?? 'Disetujui';
+    WhQ("UPDATE spk SET status='Diterbitkan', workflow_status='Pelaksanaan', issued_at=now(), issued_by=$2, updated_at=now() WHERE id=$1", array($id, $userId));
+    SpkWorkflowLog($id, $oldWorkflow, 'Pelaksanaan', 'issue', 'SPK diterbitkan untuk pelaksanaan');
     WhQ('COMMIT');
     WhOk('SPK ' . $s['spk_no'] . ' diterbitkan.');
 }
@@ -230,7 +337,9 @@ function SpkClose() {
     WhQ('BEGIN');
     $s = SpkGet($id, true);
     if ($s['status'] !== 'Diterbitkan') { throw new WhException('Hanya SPK berstatus Diterbitkan yang dapat ditutup.'); }
-    WhQ("UPDATE spk SET status='Selesai', closed_at=now(), closed_by=$2, updated_at=now() WHERE id=$1", array($id, $userId));
+    if (($s['workflow_status'] ?? '') !== 'Menunggu Verifikasi') { throw new WhException('Ajukan verifikasi terlebih dahulu sebelum SPK diselesaikan.'); }
+    WhQ("UPDATE spk SET status='Selesai', workflow_status='Selesai', closed_at=now(), closed_by=$2, updated_at=now() WHERE id=$1", array($id, $userId));
+    SpkWorkflowLog($id, 'Menunggu Verifikasi', 'Selesai', 'verify_complete', 'SPK diverifikasi selesai');
     WhQ('COMMIT');
     WhOk('SPK ' . $s['spk_no'] . ' ditutup. Sisa jatah yang tidak terpakai kembali menjadi kuota proyek.');
 }
@@ -242,8 +351,11 @@ function SpkCancel() {
     WhQ('BEGIN');
     $s = SpkGet($id, true);
     if ($s['status'] !== 'Draft' && $s['status'] !== 'Diterbitkan') { throw new WhException('SPK berstatus ' . $s['status'] . ' tidak dapat dibatalkan.'); }
+    if (($s['workflow_status'] ?? 'Draft') === 'Selesai') { throw new WhException('SPK yang sudah selesai tidak dapat dibatalkan.'); }
     if (SpkIssueCount($id) > 0) { throw new WhException('SPK ini sudah dipakai issue material. Reverse issue terkait dulu, atau gunakan Tutup SPK.'); }
-    WhQ("UPDATE spk SET status='Dibatalkan', updated_at=now() WHERE id=$1", array($id));
+    $oldWorkflow = $s['workflow_status'] ?? 'Draft';
+    WhQ("UPDATE spk SET status='Dibatalkan', workflow_status='Dibatalkan', updated_at=now() WHERE id=$1", array($id));
+    SpkWorkflowLog($id, $oldWorkflow, 'Dibatalkan', 'cancel', 'SPK dibatalkan');
     WhQ('COMMIT');
     WhOk('SPK ' . $s['spk_no'] . ' dibatalkan.');
 }
@@ -254,7 +366,7 @@ function SpkDelete() {
     $id = (int)WhPost('id');
     WhQ('BEGIN');
     $s = SpkGet($id, true);
-    if ($s['status'] !== 'Draft') { throw new WhException('Hanya SPK berstatus Draft yang dapat dihapus. Gunakan Batalkan untuk SPK lain.'); }
+    if ($s['status'] !== 'Draft' || ($s['workflow_status'] ?? 'Draft') !== 'Draft') { throw new WhException('Hanya SPK Draft yang belum diajukan persetujuan yang dapat dihapus.'); }
     WhQ('DELETE FROM spk WHERE id=$1', array($id));       // spk_items ikut terhapus (ON DELETE CASCADE)
     WhQ('COMMIT');
     WhOk('SPK ' . $s['spk_no'] . ' dihapus.');
