@@ -112,6 +112,49 @@ try {
     switch ($task) {
 
         /* ------------------------------------------------------------------
+         * [AI-VARIANCE] Ambil hasil analisis terakhir yang sudah tersimpan.
+         * Digunakan oleh cetak tanda terima agar hasilnya sama dengan panel di layar,
+         * tanpa menjalankan analisis Gemini ulang.
+         * ------------------------------------------------------------------ */
+        case 'latest_project_variance':
+            $prjId = (int)($_REQUEST['project_id'] ?? 0);
+            if ($prjId <= 0) sendJsonResponse(false, [], 'Proyek wajib dipilih.');
+
+            $st = $db->prepare("
+                SELECT id, project_id, total_budget, total_actual, variance_amount,
+                       variance_percentage, risk_level, ai_summary, recommendations, created_at
+                  FROM public.ai_variance_logs
+                 WHERE project_id = :pid
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 1
+            ");
+            $st->execute([':pid' => $prjId]);
+            $log = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$log) {
+                sendJsonResponse(false, [], 'Belum ada hasil analisis AI tersimpan untuk proyek ini.');
+            }
+            $recommendations = $log['recommendations'] ?? [];
+            if (is_string($recommendations)) {
+                $decoded = json_decode($recommendations, true);
+                $recommendations = is_array($decoded) ? $decoded : [];
+            }
+            if (!is_array($recommendations)) $recommendations = [];
+
+            sendJsonResponse(true, [
+                'id' => (int)$log['id'],
+                'project_id' => (int)$log['project_id'],
+                'total_budget' => (float)$log['total_budget'],
+                'total_actual' => (float)$log['total_actual'],
+                'variance_amount' => (float)$log['variance_amount'],
+                'variance_percentage' => (float)$log['variance_percentage'],
+                'risk_level' => $log['risk_level'],
+                'ai_summary' => $log['ai_summary'],
+                'recommendations' => $recommendations,
+                'created_at' => $log['created_at']
+            ], 'Hasil analisis AI terakhir berhasil dimuat.');
+            break;
+
+        /* ------------------------------------------------------------------
          * [AI-VARIANCE] Analisis Varian Anggaran Proyek menggunakan Google Gemini API
          * ------------------------------------------------------------------ */
         case 'analyze_project_variance':
