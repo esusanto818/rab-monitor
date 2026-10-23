@@ -221,8 +221,11 @@ Ext.onReady(function () {
 
     function updateMainButtons() {
         mainBtnEnable('#addData');
-        if (dataRecord && dataRecord.status === 'Draft' && (!dataRecord.workflow_status || dataRecord.workflow_status === 'Draft' || dataRecord.workflow_status === 'Ditolak')) { mainBtnEnable('#editData'); mainBtnEnable('#deleteData'); }
-        else { mainBtnDisable('#editData'); mainBtnDisable('#deleteData'); }
+        var wf = dataRecord ? (dataRecord.workflow_status || 'Draft') : '';
+        if (dataRecord && dataRecord.status === 'Draft' && (wf === 'Draft' || wf === 'Ditolak')) { mainBtnEnable('#editData'); }
+        else { mainBtnDisable('#editData'); }
+        if (dataRecord && dataRecord.status === 'Draft' && wf === 'Draft') { mainBtnEnable('#deleteData'); }
+        else { mainBtnDisable('#deleteData'); }
     }
     editDataDisable();
     updateMainButtons();
@@ -285,7 +288,7 @@ Ext.onReady(function () {
                 if (!id) { showErr('Pilih task proyek terlebih dahulu.'); return; }
                 if (selectedTasks.some(function(t){ return parseInt(t.id,10) === id; })) { showErr('Task sudah ada di daftar SPK.'); return; }
                 var opt = taskSelect.options[taskSelect.selectedIndex];
-                selectedTasks.push({id:id, task_name:opt.getAttribute('data-name') || opt.text, description:opt.getAttribute('data-description') || '', status:opt.getAttribute('data-status') || ''});
+                selectedTasks.push({id:id, task_name:opt.getAttribute('data-name') || opt.text, description:opt.getAttribute('data-description') || '', status:opt.getAttribute('data-status') || '', start_date:opt.getAttribute('data-start') || '', end_date:opt.getAttribute('data-end') || ''});
                 renderSelectedTasks();
             };
         }
@@ -313,7 +316,7 @@ Ext.onReady(function () {
             if(!res.success){showErr(res.message || 'Gagal memuat task proyek.');return;}
             if(taskSelect){
                 var opts='<option value="">Pilih task proyek...</option>';
-                (res.data || []).forEach(function(t){opts+='<option value="'+enc(t.id)+'" data-name="'+enc(t.task_name)+'" data-description="'+enc(t.description || '')+'" data-status="'+enc(t.status || '')+'">'+enc(t.task_name)+' ('+enc(t.status || 'Belum Mulai')+')</option>';});
+                (res.data || []).forEach(function(t){opts+='<option value="'+enc(t.id)+'" data-name="'+enc(t.task_name)+'" data-description="'+enc(t.description || '')+'" data-status="'+enc(t.status || '')+'" data-start="'+enc(t.start_date || '')+'" data-end="'+enc(t.end_date || '')+'">'+enc(t.task_name)+' ('+enc(t.status || 'Belum Mulai')+')</option>';});
                 taskSelect.innerHTML=opts;
             }
             renderSelectedTasks();
