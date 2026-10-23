@@ -73,8 +73,8 @@ $paymentId = intval($_GET['id'] ?? 0);
     </main>
     <script>
         window.PAYMENT_ID = <?php echo json_encode($paymentId); ?>;
-        window.PAYMENT_CRD_URL = '/rab-project/php-crud/project.paymentCRD.php';
+        window.PAYMENT_CRD_URL = '/rab-project/dev/php-crud/project.paymentCRD.php';
     </script>
-    <script src="/rab-project/js/project.payment.print.js?v=20261023-fix2"></script>
+    <script src="/rab-project/dev/js/project.payment.print.js?v=20261023-fix2"></script>
 </body>
 </html>

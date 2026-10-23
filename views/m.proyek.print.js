@@ -1,6 +1,6 @@
 (function () {
 'use strict';
-var endpoint = '/rab-project/php-crud/m.proyekCRD.php';
+var endpoint = '/rab-project/dev/php-crud/m.proyekCRD.php';
 var mode = window.PROJECT_PRINT_MODE || 'projects';
 var projectId = parseInt(window.PROJECT_PRINT_ID, 10) || 0;
 var content = document.getElementById('content');

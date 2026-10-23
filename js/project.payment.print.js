@@ -8,7 +8,7 @@
     'use strict';
 
     var paymentId = parseInt(window.PAYMENT_ID, 10) || 0;
-    var endpoint = window.PAYMENT_CRD_URL || '/rab-project/php-crud/project.paymentCRD.php';
+    var endpoint = window.PAYMENT_CRD_URL || '/rab-project/dev/php-crud/project.paymentCRD.php';
     var root = document.getElementById('receipt');
 
     function esc(value) {

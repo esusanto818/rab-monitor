@@ -3,7 +3,7 @@
   Description   : Laporan Keuangan - Neraca & Laba Rugi, render sebagai
                    HTML table (bukan Ext Grid, supaya mudah bikin format
                    laporan keuangan konvensional: indentasi, subtotal, dll).
-  Backend       : /rab-project/php-crud/financialreportCRD.php
+  Backend       : /rab-project/dev/php-crud/financialreportCRD.php
 */
 
 Ext.onReady(function () {

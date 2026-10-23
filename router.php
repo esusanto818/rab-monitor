@@ -146,13 +146,13 @@ try {
         */
         // B. AUTO-REPLACE STRING PATH RELATIF TANPA UpBAH DUSUN FILE DARI FRONTEND
         $patterns = [
-            '="../css/'      => '="/rab-project/css/',
-            '="../js/'       => '="/rab-project/js/',
+            '="../css/'      => '="/rab-project/dev/css/',
+            '="../js/'       => '="/rab-project/dev/js/',
             '="../js-ext/'   => '="/rab-project/js-ext/',
             '="../pdf/'      => '="/rab-project/pdf/',
             '="../tcpdf_new/'=> '="/rab-project/tcpdf_new/',
             '="../js-func/'  => '="/rab-project/js-func/',
-            '="../php-crud/' => '="/rab-project/php-crud/',
+            '="../php-crud/' => '="/rab-project/dev/php-crud/',
 
         ];
         $htmlOutput = strtr($htmlOutput, $patterns);

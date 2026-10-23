@@ -1,7 +1,7 @@
 /*
   Document      : deposit_report.js
   Description   : Monitoring Deposit (Customer Deposit / Supplier Deposit) - Read-only report
-  Backend       : /rab-project/php-crud/deposit.reportCRD.php
+  Backend       : /rab-project/dev/php-crud/deposit.reportCRD.php
 */
 
 Ext.onReady(function () {

@@ -7,7 +7,7 @@
                                           jenis kurs default, dasar kurs laba rugi, awal tahun fiskal, desimal
                    4. Dokumen           : footer & penandatangan + pratinjau kop dokumen
                   Transaksi (RAB, PO, dst) boleh multi currency; laporan keuangan final mengacu ke tab Keuangan.
-  Backend       : /rab-project/php-crud/settingsCRD.php
+  Backend       : /rab-project/dev/php-crud/settingsCRD.php
 */
 
 Ext.onReady(function () {

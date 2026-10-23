@@ -1,39 +1,39 @@
-<link rel="shortcut icon" href="/rab-project/assets/logo512.png" type="image/x-icon">
-<link rel="icon" href="/rab-project/favicon.ico" type="image/x-icon">
-<link rel="stylesheet" type="text/css" href="/rab-project/ext-3.4.1/resources/css/ext-all.css">
-<!-- <link rel="stylesheet" type="text/css" href="/rab-project/css/ext-all.css"> -->
-<link rel="stylesheet" type="text/css" href="/rab-project/css/ButtonColumn.css">
-<link rel="stylesheet" type="text/css" href="/rab-project/css/myFonts.css">
-<link rel="stylesheet" type="text/css" href="/rab-project/css/mainCSS.css">
-<link rel="stylesheet" type="text/css" href="/rab-project/css/popUp.css">
-<link rel="stylesheet" type="text/css" href="/rab-project/css/logWdw.css">
+<link rel="shortcut icon" href="/rab-project/dev/assets/logo512.png" type="image/x-icon">
+<link rel="icon" href="/rab-project/dev/favicon.ico" type="image/x-icon">
+<link rel="stylesheet" type="text/css" href="/rab-project/dev/dev/ext-3.4.1/resources/css/ext-all.css">
+<!-- <link rel="stylesheet" type="text/css" href="/rab-project/dev/css/ext-all.css"> -->
+<link rel="stylesheet" type="text/css" href="/rab-project/dev/css/ButtonColumn.css">
+<link rel="stylesheet" type="text/css" href="/rab-project/dev/css/myFonts.css">
+<link rel="stylesheet" type="text/css" href="/rab-project/dev/css/mainCSS.css">
+<link rel="stylesheet" type="text/css" href="/rab-project/dev/css/popUp.css">
+<link rel="stylesheet" type="text/css" href="/rab-project/dev/css/logWdw.css">
 <div id="container">
   <div class="layerBackGround"></div>
   <div id="content">
-    <?php include BASE_PATH . "/includes/div-header-icn.php"; ?>
+    <?php include BASE_PATH . "/dev/includes/div-header-icn.php"; ?>
     <div id="divMainGrid"></div>
     <div id="divDetailGrid"></div>
-    <?php include BASE_PATH . "/includes/div-burger-menu.php"; ?>
-    <?php include BASE_PATH . "/includes/div-prn-wdw.php"; ?>
-    <?php include BASE_PATH . "/includes/div-editor-wdw.php"; ?>
-    <?php include BASE_PATH . "/includes/div-add-wdw.php"; ?>
-    <?php include BASE_PATH . "/includes/div-upload-wdw.php"; ?>
-    <?php include BASE_PATH . "/includes/div-popUp.php"; ?>
-    <?php include BASE_PATH . "/includes/div-log.php"; ?>
-    <?php include BASE_PATH . "/includes/div-chart.php"; ?>
-    <?php include BASE_PATH . "/includes/div-loading-wdw.php"; ?>
+    <?php include BASE_PATH . "/dev/includes/div-burger-menu.php"; ?>
+    <?php include BASE_PATH . "/dev/includes/div-prn-wdw.php"; ?>
+    <?php include BASE_PATH . "/dev/includes/div-editor-wdw.php"; ?>
+    <?php include BASE_PATH . "/dev/includes/div-add-wdw.php"; ?>
+    <?php include BASE_PATH . "/dev/includes/div-upload-wdw.php"; ?>
+    <?php include BASE_PATH . "/dev/includes/div-popUp.php"; ?>
+    <?php include BASE_PATH . "/dev/includes/div-log.php"; ?>
+    <?php include BASE_PATH . "/dev/includes/div-chart.php"; ?>
+    <?php include BASE_PATH . "/dev/includes/div-loading-wdw.php"; ?>
     <div id="linksOverlay" style="display:none;"></div>
   </div>
-  <?php include BASE_PATH . "/includes/div-links-menu.php"; ?>
+  <?php include BASE_PATH . "/dev/includes/div-links-menu.php"; ?>
 </div>
-<!-- <script type="text/javascript" src="/rab-project/js-ext/ext-base.js"></script>
-<script type="text/javascript" src="/rab-project/js-ext/ext-all.js"></script> -->
-<script type="text/javascript" src="/rab-project/ext-3.4.1/adapter/ext/ext-base.js"></script>
-<script type="text/javascript" src="/rab-project/ext-3.4.1/ext-all.js"></script>  
-<script type="text/javascript" src="/rab-project/js-func/jquery-3.2.1.min.js"></script>
-<script type="text/javascript" src="/rab-project/js-func/Chart.min.js"></script>
-<script type="text/javascript" src="/rab-project/js-func/mainFunction.js"></script>
-<script type="text/javascript" src="/rab-project/js-func/ExtExtend.js"></script>
+<!-- <script type="text/javascript" src="/rab-project/dev/js-ext/ext-base.js"></script>
+<script type="text/javascript" src="/rab-project/dev/js-ext/ext-all.js"></script> -->
+<script type="text/javascript" src="/rab-project/dev/ext-3.4.1/adapter/ext/ext-base.js"></script>
+<script type="text/javascript" src="/rab-project/dev/ext-3.4.1/ext-all.js"></script>  
+<script type="text/javascript" src="/rab-project/dev/js-func/jquery-3.2.1.min.js"></script>
+<script type="text/javascript" src="/rab-project/dev/js-func/Chart.min.js"></script>
+<script type="text/javascript" src="/rab-project/dev/js-func/mainFunction.js"></script>
+<script type="text/javascript" src="/rab-project/dev/js-func/ExtExtend.js"></script>
   
 <script type="text/javascript">
   let mainDs = '', gridAddEditorDs = '';

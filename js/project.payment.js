@@ -12,7 +12,7 @@
                    diisi dalam mata uang pembayaran; tagihan termin tetap IDR, nilai setara IDR = nilai x kurs (dibatasi sisa tagihan).
                    [JURNAL] simpan pembayaran memposting jurnal otomatis (Kas/Bank wajib dipilih); hapus pembayaran menghapus jurnalnya.
                    [AI-VARIANCE] Integrasi Analisis Varian Anggaran dan Risiko Proyek menggunakan Google Gemini API.
-  Backend       : /rab-project/php-crud/project.paymentCRD.php
+  Backend       : /rab-project/dev/php-crud/project.paymentCRD.php
   Cetak         : /rab-project/views/project.payment.print.php?id=<id>  (project.payment.print.js)
 */
 
@@ -20,7 +20,7 @@ Ext.onReady(function () {
     Ext.QuickTips.init();
     document.getElementById("mainHeaderText").innerHTML = "Pembayaran <em>Termin</em>";
 
-    var CRD = '/rab-project/php-crud/project.paymentCRD.php';
+    var CRD = '/rab-project/dev/php-crud/project.paymentCRD.php';
     var PRINT_URL = '/rab-project/views/project.payment.print.php?id=';
     var ACCESS_ADD = 2;      // level akses minimal: input pembayaran / termin
     var ACCESS_EDIT = 3;     // level akses minimal: hapus pembayaran

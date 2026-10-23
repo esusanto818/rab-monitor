@@ -11,7 +11,7 @@
                   dibatalkan lewat Batal Kirim / Batalkan Perintah di modul itu.
                   [NEW 2026-10-11] Alur gudang untuk issue retur: pending -> Siap Kirim (prepared) -> Konfirmasi Dikirim (posted).
                   Stok keluar + jurnal baru dibuat saat Konfirmasi Dikirim (gudang yang menyatakan barang benar-benar keluar).
-  Backend       : /rab-project/php-crud/warehouse.issuingCRD.php
+  Backend       : /rab-project/dev/php-crud/warehouse.issuingCRD.php
   PERUBAHAN     : [REBUILD] disusun ulang mengikuti pola template (versi standalone Ext.Window sebelumnya salah)
                   [FIX-DATE] tanggal dikirim lewat ymd() (Date.format('Y-m-d') Ext menghasilkan 'Y-10-10' di browser ini)
                   [CHANGED] gudang = gudang yang masih ada material (bukan lagi per-proyek)

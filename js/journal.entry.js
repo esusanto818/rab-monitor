@@ -1,7 +1,7 @@
 /*
   Document      : m.journal.js
   Description   : Journal Entry (manual) - Header Grid + Detail View + Editor Form
-  Backend       : /rab-project/php-crud/journal.entryCRD.php
+  Backend       : /rab-project/dev/php-crud/journal.entryCRD.php
 */
 
 Ext.onReady(function () {
@@ -74,7 +74,7 @@ Ext.onReady(function () {
 
     var coaField = [{ name: 'id' }, { name: 'account_code' }, { name: 'account_name' }];
     var coaDs = new Ext.data.Store({
-        url: '../php-crud/m.coaCRD.php',
+        url: '../dev/php-crud/m.coaCRD.php',
         baseParams: { task: 'read_parent' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, coaField)
     });
@@ -82,20 +82,20 @@ Ext.onReady(function () {
 
     var periodField = [{ name: 'id' }, { name: 'period_name' }];
     var periodDs = new Ext.data.Store({
-        url: '../php-crud/m.fiscalperiodCRD.php',
+        url: '../dev/php-crud/m.fiscalperiodCRD.php',
         baseParams: { task: 'read_open' },
         reader: new Ext.data.JsonReader({ root: 'data', idProperty: 'id' }, periodField)
     });
     periodDs.load();
 
     var lineGridDs = new Ext.data.Store({
-        url: '../php-crud/journal.entryCRD.php',
+        url: '../dev/php-crud/journal.entryCRD.php',
         baseParams: { task: 'read_lines' },
         reader: new Ext.data.JsonReader({ root: 'data', totalProperty: 'totalCount' }, lineField)
     });
 
     var mainDs = new Ext.data.Store({
-        url: '../php-crud/journal.entryCRD.php',
+        url: '../dev/php-crud/journal.entryCRD.php',
         idProperty: 'id',
         baseParams: { task: 'read' },
         reader: new Ext.data.JsonReader({ root: 'data', totalProperty: 'totalCount' }, journalField)

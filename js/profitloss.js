@@ -3,7 +3,7 @@
   Description   : Profit & Loss (Laporan Rugi Laba) - Read-only report.
                   Kolom ganda: "Periode Ini" (mutasi dalam periode) dan "Kumulatif s/d Periode" (dari awal s/d akhir periode).
                   Periode default = periode yang memuat tanggal hari ini.
-  Backend       : /rab-project/php-crud/profitlossCRD.php
+  Backend       : /rab-project/dev/php-crud/profitlossCRD.php
   CATATAN       : File ini disusun ulang mengikuti pola balancesheet.js dan tampilan layar Profit & Loss sebelumnya.
 */
 

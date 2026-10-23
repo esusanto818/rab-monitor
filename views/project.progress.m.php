@@ -91,6 +91,6 @@ header('ngrok-skip-browser-warning: 1');
     <script type="text/javascript">
         window.formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 0)); ?>;
     </script>
-    <script type="text/javascript" src="/rab-project/js/project.progress.m.js"></script>
+    <script type="text/javascript" src="/rab-project/dev/js/project.progress.m.js"></script>
 </body>
 </html>
