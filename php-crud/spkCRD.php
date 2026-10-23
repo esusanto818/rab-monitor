@@ -192,12 +192,13 @@ function SpkSave() {
     if ($projectId < 1) { throw new WhException('Proyek wajib dipilih.'); }
     if (!WhRow('SELECT 1 FROM projects WHERE id=$1', array($projectId))) { throw new WhException('Proyek tidak ditemukan.'); }
 
-    // [SPK-TASK] Validasi task berasal dari proyek yang sama, tidak duplikat, dan tidak dipakai SPK aktif lain.
+    // [SPK-TASK] Mulai transaksi sebelum validasi/locking task agar dua SPK bersamaan tidak mengikat task yang sama.
+    WhQ('BEGIN');
     $taskIds = array();
     foreach ($taskDetails as $td) {
         $tid = isset($td['task_id']) ? (int)$td['task_id'] : 0;
         if ($tid < 1 || isset($taskIds[$tid])) { throw new WhException('Task SPK tidak valid atau terpilih lebih dari sekali.'); }
-        if (!WhRow('SELECT 1 FROM public.project_tasks WHERE id=$1 AND project_id=$2', array($tid, $projectId))) {
+        if (!WhRow('SELECT 1 FROM public.project_tasks WHERE id=$1 AND project_id=$2 FOR UPDATE', array($tid, $projectId))) {
             throw new WhException('Task yang dipilih bukan bagian dari proyek ini.');
         }
         if (WhRow("SELECT 1 FROM spk_tasks st JOIN spk s ON s.id=st.spk_id
@@ -225,7 +226,6 @@ function SpkSave() {
     }
     // Detail material bersifat opsional; bila diisi tetap divalidasi terhadap RAB dan kuota saat penerbitan.
 
-    WhQ('BEGIN');
     if ($id > 0) {
         $s = SpkGet($id, true);
         if ($s['status'] !== 'Draft' || !in_array(($s['workflow_status'] ?? 'Draft'), array('Draft','Ditolak'), true)) { throw new WhException('SPK hanya dapat diubah saat berstatus Draft atau setelah ditolak.'); }
