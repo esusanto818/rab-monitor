@@ -211,11 +211,32 @@
     }
 
     window.addEventListener('beforeprint', fitAiSectionForPrint);
-    document.getElementById('btnPrintReceipt').addEventListener('click', function () {
-        fitAiSectionForPrint();
-        window.print();
-    });
-    document.getElementById('btnCloseReceipt').addEventListener('click', function () { window.close(); });
+
+    // Assign direct handlers so toolbar controls remain functional even if other
+    // page scripts register delegated click handlers.
+    var printButton = document.getElementById('btnPrintReceipt');
+    var closeButton = document.getElementById('btnCloseReceipt');
+    if (printButton) {
+        printButton.onclick = function () {
+            if (printButton.disabled) return;
+            fitAiSectionForPrint();
+            window.focus();
+            window.print();
+        };
+    }
+    if (closeButton) {
+        closeButton.onclick = function () {
+            window.close();
+            window.setTimeout(function () {
+                // Browsers may block window.close() when the page was not opened
+                // by script; provide a usable fallback instead of a dead button.
+                if (!window.closed) {
+                    if (window.history.length > 1) window.history.back();
+                    else window.location.href = '/rab-project/';
+                }
+            }, 120);
+        };
+    }
 
     if (!paymentId) {
         fail('ID pembayaran tidak valid.');
