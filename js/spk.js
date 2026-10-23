@@ -221,7 +221,7 @@ Ext.onReady(function () {
 
     function updateMainButtons() {
         mainBtnEnable('#addData');
-        if (dataRecord && dataRecord.status === 'Draft') { mainBtnEnable('#editData'); mainBtnEnable('#deleteData'); }
+        if (dataRecord && dataRecord.status === 'Draft' && (!dataRecord.workflow_status || dataRecord.workflow_status === 'Draft' || dataRecord.workflow_status === 'Ditolak')) { mainBtnEnable('#editData'); mainBtnEnable('#deleteData'); }
         else { mainBtnDisable('#editData'); mainBtnDisable('#deleteData'); }
     }
     editDataDisable();
@@ -422,7 +422,7 @@ Ext.onReady(function () {
 
     document.getElementById('editData').onclick = function () {
         if (!dataRecord) { showErr('Pilih SPK terlebih dahulu dari tabel.'); return; }
-        if (dataRecord.status !== 'Draft') { showErr('Hanya SPK berstatus Draft yang dapat diubah.'); return; }
+        if (dataRecord.status !== 'Draft' || (dataRecord.workflow_status && dataRecord.workflow_status !== 'Draft' && dataRecord.workflow_status !== 'Ditolak')) { showErr('SPK hanya dapat diubah saat berstatus Draft atau setelah ditolak.'); return; }
         if (!needAccess(ACCESS_EDIT, 'Anda tidak memiliki hak akses untuk mengubah SPK.')) return;
         ajax({ action: 'detail', id: dataRecord.id }, function (res) {
             if (!res.success) { showErr(res.message || 'Gagal memuat SPK.'); return; }
