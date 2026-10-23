@@ -292,6 +292,10 @@ function SpkRequestVerification() {
     WhRequirePost(); SpkNeed(SPK_ACCESS_EDIT, 'Anda tidak memiliki hak akses untuk mengajukan verifikasi.');
     $id=(int)WhPost('id'); $note=trim(WhPost('note')); WhQ('BEGIN'); $s=SpkGet($id,true);
     if ($s['status']!=='Diterbitkan' || ($s['workflow_status'] ?? '')!=='Pelaksanaan') { throw new WhException('Hanya SPK yang sedang dalam pelaksanaan dapat diajukan verifikasi.'); }
+    // [SPK-TASK] Verifikasi hanya diajukan setelah semua task yang tercantum berstatus selesai.
+    $pending = WhRow("SELECT COUNT(*) AS n FROM spk_tasks st JOIN public.project_tasks t ON t.id=st.task_id
+                      WHERE st.spk_id=$1 AND COALESCE(t.status,'') NOT IN ('Selesai','Completed','Done')", array($id));
+    if ((int)$pending['n'] > 0) { throw new WhException('Verifikasi belum dapat diajukan: pastikan semua task dalam SPK berstatus Selesai.'); }
     WhQ("UPDATE spk SET workflow_status='Menunggu Verifikasi', updated_at=now() WHERE id=$1",array($id));
     SpkWorkflowLog($id,'Pelaksanaan','Menunggu Verifikasi','request_verification',$note);
     WhQ('COMMIT'); WhOk('SPK diajukan untuk verifikasi.');
