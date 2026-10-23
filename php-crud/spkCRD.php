@@ -226,7 +226,8 @@ function SpkSave() {
     if ($id > 0) {
         $s = SpkGet($id, true);
         if ($s['status'] !== 'Draft') { throw new WhException('Hanya SPK berstatus Draft yang dapat diubah.'); }
-        WhQ('UPDATE spk SET spk_date=$2, project_id=$3, foreman=$4, description=$5, remark=$6, updated_at=now() WHERE id=$1',
+        // [SPK-WORKFLOW] Draft yang ditolak kembali ke Draft saat diedit agar dapat diajukan ulang.
+        WhQ("UPDATE spk SET spk_date=$2, project_id=$3, foreman=$4, description=$5, remark=$6, workflow_status='Draft', approved_at=NULL, approved_by=NULL, updated_at=now() WHERE id=$1",
             array($id, $date, $projectId, $foreman, $desc, $remark));
         WhQ('DELETE FROM spk_items WHERE spk_id=$1', array($id));
         WhQ('DELETE FROM spk_tasks WHERE spk_id=$1', array($id)); // [SPK-TASK] Sinkronkan task saat draft diedit
@@ -246,9 +247,9 @@ function SpkSave() {
         WhQ('INSERT INTO spk_items (spk_id, material_id, qty, unit, notes) VALUES ($1,$2,$3,$4,$5)',
             array($id, $mid, $ln['qty'], $m ? $m['unit'] : '', $ln['notes']));
     }
+    // [SPK-WORKFLOW] Catat draft sebelum COMMIT agar data dan riwayat tetap atomik.
+    SpkWorkflowLog($id, isset($s) ? ($s['workflow_status'] ?? 'Draft') : '', 'Draft', 'save', 'Draft SPK disimpan');
     WhQ('COMMIT');
-    // [SPK-WORKFLOW] Catat pembuatan/perubahan draft pada audit trail.
-    SpkWorkflowLog($id, $id > 0 ? 'Draft' : '', 'Draft', 'save', 'Draft SPK disimpan');
     WhOk('SPK tersimpan (Draft). No: ' . $spkNo, array('id' => $id, 'spk_no' => $spkNo));
 }
 
