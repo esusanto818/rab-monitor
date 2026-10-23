@@ -179,14 +179,18 @@ Ext.onReady(function () {
         });
     }
 
-    function renderMainDetailPanel(records) {
+   function renderMainDetailPanel(records) {
         if (!dataRecord) return;
         var scopeTxt = dataRecord.project_scope || 'Belum ada spesifikasi teknis.';
         
-        var html = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' +
+        // Tata letak diperbarui: Judul dan Poin Kontrak di baris pertama, 
+        // Tombol Print Task ditempatkan di sebelah kiri di bawah teks Judul.
+        var html = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
                    '<h3 style="margin:0; font-size:16px; color:#00bcd4;">Detail & Sub-Task Proyek AI: ' + Ext.util.Format.htmlEncode(dataRecord.name) + '</h3>' +
-                   '<button type="button" id="btnPrintProjectTasks" style="padding:7px 14px; background:#087f8c; color:#fff; border:0; border-radius:4px; cursor:pointer; font-weight:bold;">Print Task</button>' +
                    '<span style="color:#a1c4d0; font-size:12px;">Poin Kontrak: <b>Rp ' + fmtRp(dataRecord.contract_value) + '</b></span>' +
+                   '</div>' +
+                   '<div style="margin-bottom:10px;">' +
+                   '<button type="button" id="btnPrintProjectTasks" style="padding:6px 14px; background:#087f8c; color:#fff; border:0; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px;">Print Task</button>' +
                    '</div>' +
                    '<div style="background:#132330; padding:10px; border-radius:4px; margin-bottom:12px; border:1px solid #1c3648;">' +
                    '<b style="color:#00bcd4; font-size:13px;">Definisi / Lingkup Proyek:</b>' +
@@ -208,10 +212,10 @@ Ext.onReady(function () {
                 var d = r.data;
                 html += '<tr style="border-bottom:1px solid #182e3e;">' +
                         '<td style="font-weight:bold; color:#e0f7fa;padding:12px 8px;">' + Ext.util.Format.htmlEncode(d.task_name) + '</td>' +
-                        '<td style="color:#b0bec5;padding:12px 8px;padding:12px 8px;">' + Ext.util.Format.htmlEncode(d.description) + '</td>' +
+                        '<td style="color:#b0bec5;padding:12px 8px;">' + Ext.util.Format.htmlEncode(d.description) + '</td>' +
                         '<td align="center" style="color:#80deea;padding:12px 8px;">' + Ext.util.Format.htmlEncode(d.start_date) + '</td>' +
                         '<td align="center" style="color:#80deea;padding:12px 8px;">' + Ext.util.Format.htmlEncode(d.end_date) + '</td>' +
-                        '<td align="center"><span style="background:#004d40; color:#80cbc4; padding:2px 8px; border-radius:3px; font-size:11px;padding:12px 8px;">' + Ext.util.Format.htmlEncode(d.status) + '</span></td>' +
+                        '<td align="center"><span style="background:#004d40; color:#80cbc4; padding:2px 8px; border-radius:3px; font-size:11px;">' + Ext.util.Format.htmlEncode(d.status) + '</span></td>' +
                         '</tr>';
             });
         }
