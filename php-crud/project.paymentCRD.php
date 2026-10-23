@@ -4,8 +4,36 @@
  * ============================================================
  * Backend Controller Pembayaran Termin per Proyek (project.payment.js)
  * dan data cetak Tanda Terima (project.payment.print.js).
- * Pola: PDO (class crud), dispatch lewat $_REQUEST['task'],
+ * Pola sama dengan poCRD.php: PDO (class crud), dispatch lewat $_REQUEST['task'],
  * respons JSON {success, message, data, totalCount}.
+ *
+ * Sumber data:
+ *   project_invoices       = tagihan termin per proyek (inv_no, termin_name, amount, paid_amount)
+ *   project_payments       = header pembayaran dari client (total, teralokasi, lebih bayar)
+ *   project_payment_items  = alokasi pembayaran ke tiap termin
+ *   projects, clients, chart_of_accounts (akun kas/bank)
+ *
+ * Aturan:
+ *  1. [MULTI-PROYEK] Satu pembayaran = satu CLIENT; alokasi boleh ke termin beberapa proyek milik client yang sama
+ *     (validasi: projects.client_id dari setiap termin harus sama dengan client pembayaran).
+ *  2. Alokasi per termin tidak boleh melebihi sisa tagihan (amount - paid_amount).
+ *  3. total_amount >= allocated_amount; selisihnya disimpan di excess_amount (lebih bayar).
+ *  4. Simpan / hapus pembayaran memperbarui project_invoices.paid_amount dalam satu transaksi.
+ *  5. Pembayaran tidak bisa diedit; koreksi = hapus (reverse) lalu input ulang.
+ *  6. Termin baru: total semua termin proyek tidak boleh melebihi contract_value (bila diisi).
+ *  7. [MULTI-CURRENCY] Pembayaran punya mata uang + kurs (default IDR, kurs 1). Input klien (total_amount, amount_paid) = mata uang
+ *     pembayaran; tagihan termin tetap IDR. Yang disimpan: total_amount / allocated_amount / excess_amount / amount_paid = IDR
+ *     (supaya project_invoices.paid_amount & laporan lama tetap konsisten), nilai asli di total_amount_cur / amount_cur.
+ *     Nilai setara IDR = nilai x kurs, di-snap ke sisa tagihan bila selisih hanya akibat pembulatan 2 desimal.
+ *  8. delete_termin: hapus termin salah entry, hanya bila belum pernah dibayar (paid_amount = 0 & tidak ada project_payment_items).
+ *  9. [JURNAL] save_payment memposting jurnal otomatis (AutoPostJournal, function.all.php) dalam transaksi yang sama; gagal posting = pembayaran
+ *     dibatalkan (rollback). Debit = akun Kas/Bank pilihan user (WAJIB diisi), kredit mengikuti fiscal_config:
+ *       PRJ_PAY_AR  : bagian yang dialokasikan ke termin  -> kredit Piutang Usaha
+ *       PRJ_PAY_DEP : bagian lebih bayar (excess)          -> kredit Deposit / Uang Muka Client
+ *     reference_type = 'project_payment'. delete_payment menghapus jurnalnya (ReverseJournalByReference).
+ * 10. [JURNAL-INVOICE] save_termin memposting jurnal penagihan termin (fiscal_config PROJECT_INVOICE:
+ *     Dr Piutang Usaha / Cr Pendapatan) dengan reference_type = 'project_invoice', dalam transaksi yang sama
+ *     (gagal posting = termin tidak tersimpan). delete_termin menghapus jurnal penagihannya.
  * ============================================================
  */
 
@@ -22,10 +50,10 @@ header('Content-Type: application/json');
 
 $db = new crud();
 
-const PP_EPS = 0.01;
-const PP_JOURNAL_REF = 'project_payment';
-const PP_METHODS = ['BANK_TRANSFER', 'CASH', 'GIRO', 'CEK'];
-const PP_INV_JOURNAL_REF = 'project_invoice';
+const PP_EPS = 0.01;                                         // toleransi nilai rupiah
+const PP_JOURNAL_REF = 'project_payment';                    // [JURNAL] nilai enum journal_entries.reference_type
+const PP_METHODS = ['BANK_TRANSFER', 'CASH', 'GIRO', 'CEK']; // metode bayar yang diizinkan (varchar(20))
+const PP_INV_JOURNAL_REF = 'project_invoice';                // [JURNAL-INVOICE] nilai enum journal_entries.reference_type untuk penagihan termin
 
 class PpBusinessError extends Exception {}
 
@@ -44,17 +72,20 @@ function sendJsonResponse($success, $data = [], $message = '', $extra = []) {
     exit;
 }
 
+/** Validasi tanggal format YYYY-MM-DD. */
 function pp_valid_date(string $s): bool {
     $d = DateTime::createFromFormat('Y-m-d', $s);
     return $d && $d->format('Y-m-d') === $s;
 }
 
+/** Cek apakah termin sudah punya jurnal penagihan. */
 function pp_invoice_has_journal($db, int $invId): bool {
     $st = $db->prepare("SELECT 1 FROM public.journal_entries WHERE reference_type::text = :t AND reference_id = :id LIMIT 1");
     $st->execute([':t' => PP_INV_JOURNAL_REF, ':id' => $invId]);
     return (bool)$st->fetchColumn();
 }
 
+/** Posting jurnal penagihan termin (rule PROJECT_INVOICE). Gagal -> lempar PpBusinessError agar transaksi di-rollback. */
 function pp_post_invoice_journal($db, int $invId, string $invNo, string $date, float $amount, string $projectName): void {
     $jr = AutoPostJournal($db, [
         'rule_code'      => 'PROJECT_INVOICE',
@@ -78,16 +109,69 @@ try {
     switch ($task) {
 
         /* ------------------------------------------------------------------
-         * [AI-VARIANCE] Analisis Varian Per Proyek Individual (Sesuai Pagi Tadi)
+         * [AI-VARIANCE] Analisis Varian Anggaran Proyek menggunakan Google Gemini API
          * ------------------------------------------------------------------ */
-        case 'analyze_project_variance':
-            $projectId = (int)($_REQUEST['project_id'] ?? 0);
-            if ($projectId <= 0) {
-                sendJsonResponse(false, [], 'Proyek wajib dipilih.');
+        case 'get_latest_project_variance':
+            $prjId = (int)($_REQUEST['project_id'] ?? 0);
+            
+            // 1. Coba ambil log analisis AI berdasarkan project_id spesifik
+            $st = $db->prepare("
+                SELECT l.id, l.project_id, p.name AS project_name,
+                       l.total_budget, l.total_actual, l.variance_amount,
+                       l.variance_percentage, l.risk_level, l.ai_summary,
+                       l.recommendations, l.created_at
+                  FROM public.ai_variance_logs l
+                  LEFT JOIN public.projects p ON p.id = l.project_id
+                 WHERE l.project_id = :pid
+                 ORDER BY l.created_at DESC, l.id DESC
+                 LIMIT 1
+            ");
+            $st->execute([':pid' => $prjId]);
+            $log = $st->fetch(PDO::FETCH_ASSOC);
+
+            // 2. Fallback: Jika log spesifik belum ada, ambil log AI terbaru apa pun proyeknya
+            if (!$log) {
+                $stFallback = $db->prepare("
+                    SELECT l.id, l.project_id, p.name AS project_name,
+                           l.total_budget, l.total_actual, l.variance_amount,
+                           l.variance_percentage, l.risk_level, l.ai_summary,
+                           l.recommendations, l.created_at
+                      FROM public.ai_variance_logs l
+                      LEFT JOIN public.projects p ON p.id = l.project_id
+                     ORDER BY l.created_at DESC, l.id DESC
+                     LIMIT 1
+                ");
+                $stFallback->execute();
+                $log = $stFallback->fetch(PDO::FETCH_ASSOC);
             }
 
+            if (!$log) {
+                sendJsonResponse(true, ['found' => false, 'project_id' => $prjId], 'Belum ada hasil analisis tersimpan.');
+            }
+            
+            $log['id'] = (int)$log['id'];
+            $log['project_id'] = $log['project_id'] !== null ? (int)$log['project_id'] : $prjId;
+            $log['project_name'] = $log['project_name'] ?? 'Proyek #' . $log['project_id'];
+            
+            foreach (['total_budget', 'total_actual', 'variance_amount', 'variance_percentage'] as $field) {
+                $log[$field] = $log[$field] !== null ? (float)$log[$field] : 0;
+            }
+            if (is_string($log['recommendations'])) {
+                $decoded = json_decode($log['recommendations'], true);
+                $log['recommendations'] = is_array($decoded) ? $decoded : [];
+            }
+            if (!is_array($log['recommendations'])) {
+                $log['recommendations'] = [];
+            }
+
+            sendJsonResponse(true, ['found' => true, 'data' => $log]);
+            break;
+
+        case 'analyze_project_variance':
+            $prjId = (int)($_REQUEST['project_id'] ?? 0);
+            if ($prjId <= 0) sendJsonResponse(false, [], 'Proyek wajib dipilih.');
+
             try {
-                // Ambil data keuangan spesifik proyek ini
                 $st = $db->prepare("
                     SELECT 
                         p.id AS project_id,
@@ -98,46 +182,45 @@ try {
                     FROM public.projects p
                     WHERE p.id = :id
                 ");
-                $st->execute([':id' => $projectId]);
+                $st->execute([':id' => $prjId]);
                 $prjData = $st->fetch(PDO::FETCH_ASSOC);
-
+                
                 if (!$prjData) {
-                    sendJsonResponse(false, [], 'Data proyek tidak ditemukan.');
+                    sendJsonResponse(false, [], 'Proyek tidak ditemukan.');
                 }
 
-                $tb = (float)$prjData['total_budget'];
-                $ti = (float)$prjData['total_invoiced'];
-                $ta = (float)$prjData['total_actual'];
-                $ar = $ti - $ta;
-                $un = $tb - $ti;
-                $arPct = $ti > 0 ? ($ar / $ti) * 100 : 0;
+                $totalBudget = (float)$prjData['total_budget'];
+                $totalActual = (float)$prjData['total_actual'];
+                $varianceAmount = $totalActual - $totalBudget;
+                $variancePercentage = $totalBudget > 0 ? ($varianceAmount / $totalBudget) * 100 : 0;
 
                 $prompt = "
-                    Anda adalah Construction Cost Estimator dan Financial Controller ahli untuk sistem ERP RAB Kontraktor. 
-                    Analisis risiko keuangan dan status pembayaran untuk proyek berikut:
+                    Anda adalah Construction Cost Estimator dan System Analyst ahli untuk sistem ERP RAB Kontraktor. 
+                    Analisis data varian anggaran proyek konstruksi berikut:
                     - Nama Proyek: {$prjData['project_name']}
-                    - Total Nilai Kontrak (RAB): {$tb}
-                    - Total Ditagihkan (Invoiced): {$ti}
-                    - Total Pembayaran Diterima (Kas): {$ta}
-                    - Sisa Piutang Penagihan (Outstanding AR): {$ar} (" . number_format($arPct, 2) . "%)
-                    - Sisa Kontrak Belum Ditagih (Unbilled): {$un}
-
-                    Evaluasi tingkat risiko penagihan (Cash Collection Risk) proyek ini.
+                    - Total Anggaran / Kontrak (RAB): {$totalBudget}
+                    - Total Pengeluaran / Realisasi Aktual: {$totalActual}
+                    - Selisih Varian: {$varianceAmount} (" . number_format($variancePercentage, 2) . "%)
                     
-                    Berikan output JSON murni tanpa markdown formatting:
+                    Berikan analisis dalam format JSON murni dengan struktur kunci berikut tanpa markdown backtick tambahan:
                     - \"risk_level\": string (\"LOW\", \"MEDIUM\", \"HIGH\", atau \"CRITICAL\")
-                    - \"ai_summary\": string (ringkasan eksekutif kondisi keuangan proyek ini saja)
-                    - \"recommendations\": array of strings (tindakan mitigasi spesifik proyek ini)
+                    - \"ai_summary\": string (ringkasan eksekutif mengenai kondisi overbudget atau efisiensi biaya proyek)
+                    - \"recommendations\": array of strings (poin-poin tindakan mitigasi konkret untuk kontraktor)
                 ";
-
                 $apiKey = getenv('GOOGLE_API_KEY');
                 $candidateModels = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
 
                 $payload = json_encode([
                     'contents' => [
-                        ['parts' => [['text' => $prompt]]]
+                        [
+                            'parts' => [
+                                ['text' => $prompt]
+                            ]
+                        ]
                     ],
-                    'generationConfig' => ['responseMimeType' => 'application/json']
+                    'generationConfig' => [
+                        'responseMimeType' => 'application/json'
+                    ]
                 ]);
 
                 $response = null;
@@ -162,14 +245,22 @@ try {
                         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                         curl_close($ch);
 
-                        if ($httpCode === 200) break 2;
+                        if ($httpCode === 200) {
+                            break 2;
+                        }
+
                         $lastErrorMsg = "Model {$model} (HTTP {$httpCode}): " . $response;
-                        if ($httpCode === 503 || $httpCode === 429) sleep(1); else break;
+                        
+                        if ($httpCode === 503 || $httpCode === 429) {
+                            sleep(1);
+                        } else {
+                            break;
+                        }
                     }
                 }
 
                 if ($httpCode !== 200) {
-                    throw new Exception("Layanan Gemini API sedang padat beban. ({$lastErrorMsg})");
+                    throw new Exception("Layanan Gemini API sedang padat beban. Silakan coba beberapa saat lagi. ({$lastErrorMsg})");
                 }
 
                 $apiResult = json_decode($response, true);
@@ -184,11 +275,11 @@ try {
                     RETURNING id, created_at
                 ");
                 $stIns->execute([
-                    ':pid' => $projectId,
-                    ':tb'  => $tb,
-                    ':ta'  => $ta,
-                    ':va'  => $ar,
-                    ':vp'  => $arPct,
+                    ':pid' => $prjId,
+                    ':tb'  => $totalBudget,
+                    ':ta'  => $totalActual,
+                    ':va'  => $varianceAmount,
+                    ':vp'  => $variancePercentage,
                     ':rl'  => $aiParsed['risk_level'] ?? 'LOW',
                     ':sum' => $aiParsed['ai_summary'] ?? '',
                     ':rec' => json_encode($aiParsed['recommendations'] ?? []),
@@ -198,19 +289,17 @@ try {
 
                 sendJsonResponse(true, [
                     'id'                  => (int)$logRow['id'],
-                    'project_id'          => $projectId,
+                    'project_id'          => $prjId,
                     'project_name'        => $prjData['project_name'],
-                    'total_budget'        => $tb,
-                    'total_invoiced'      => $ti,
-                    'total_actual'        => $ta,
-                    'outstanding_ar'      => $ar,
-                    'unbilled_amount'     => $un,
-                    'variance_percentage' => $arPct,
+                    'total_budget'        => $totalBudget,
+                    'total_actual'        => $totalActual,
+                    'variance_amount'     => $varianceAmount,
+                    'variance_percentage' => $variancePercentage,
                     'risk_level'          => $aiParsed['risk_level'] ?? 'LOW',
                     'ai_summary'          => $aiParsed['ai_summary'] ?? '',
                     'recommendations'     => $aiParsed['recommendations'] ?? [],
                     'created_at'          => $logRow['created_at']
-                ], 'Analisis varian AI berhasil.');
+                ], 'Analisis varian AI berhasil dijalankan.');
 
             } catch (Exception $e) {
                 sendJsonResponse(false, [], 'Gagal memproses AI: ' . $e->getMessage());
@@ -218,7 +307,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Combo proyek
+         * Combo proyek (+ client & nilai kontrak)
          * ------------------------------------------------------------------ */
         case 'list_project_options':
             $rows = $db->query("
@@ -235,6 +324,9 @@ try {
             sendJsonResponse(true, $rows);
             break;
 
+        /* ------------------------------------------------------------------
+         * Combo client (hanya client yang punya proyek)
+         * ------------------------------------------------------------------ */
         case 'list_client_options':
             $rows = $db->query("
                 SELECT c.id, c.name
@@ -245,6 +337,9 @@ try {
             sendJsonResponse(true, $rows);
             break;
 
+        /* ------------------------------------------------------------------
+         * Combo mata uang (is_base = IDR)
+         * ------------------------------------------------------------------ */
         case 'list_currencies':
             $rows = $db->query("SELECT id, init, name FROM public.m_currency ORDER BY init ASC")->fetchAll(PDO::FETCH_ASSOC);
             foreach ($rows as &$r) {
@@ -255,6 +350,9 @@ try {
             sendJsonResponse(true, $rows);
             break;
 
+        /* ------------------------------------------------------------------
+         * Kurs default: kurs pajak KMK pada tanggal bayar.
+         * ------------------------------------------------------------------ */
         case 'get_exchange_rate':
             $cid  = (int)($_REQUEST['currency_id'] ?? 0);
             $date = (string)($_REQUEST['date'] ?? '');
@@ -293,6 +391,9 @@ try {
             ]);
             break;
 
+        /* ------------------------------------------------------------------
+         * Combo akun kas / bank aktif
+         * ------------------------------------------------------------------ */
         case 'list_account_options':
             $rows = $db->query("
                 SELECT id, account_code, account_name
@@ -306,6 +407,9 @@ try {
             sendJsonResponse(true, $rows);
             break;
 
+        /* ------------------------------------------------------------------
+         * Termin proyek yang masih punya sisa tagihan + ringkasan kontrak
+         * ------------------------------------------------------------------ */
         case 'list_outstanding':
             $cli = (int)($_REQUEST['client_id'] ?? 0);
             if ($cli <= 0) sendJsonResponse(true, ['data' => [], 'totalCount' => 0], '', ['summary' => ['projects' => []]]);
@@ -358,6 +462,9 @@ try {
             sendJsonResponse(true, ['data' => $rows, 'totalCount' => count($rows)], '', ['summary' => ['projects' => $projects]]);
             break;
 
+        /* ------------------------------------------------------------------
+         * Tambah termin (tagihan) baru untuk proyek
+         * ------------------------------------------------------------------ */
         case 'save_termin':
             $prj  = (int)($_POST['project_id'] ?? 0);
             $cliChk = (int)($_POST['client_id'] ?? 0);
@@ -411,6 +518,9 @@ try {
             }
             break;
 
+        /* ------------------------------------------------------------------
+         * Daftar pembayaran (grid utama)
+         * ------------------------------------------------------------------ */
         case 'list_payments':
             $start = (int)($_REQUEST['start'] ?? 0);
             $limit = (int)($_REQUEST['limit'] ?? 250);
@@ -471,6 +581,9 @@ try {
             sendJsonResponse(true, ['data' => $rows, 'totalCount' => $totalCount]);
             break;
 
+        /* ------------------------------------------------------------------
+         * Detail pembayaran (header + item)
+         * ------------------------------------------------------------------ */
         case 'load_payment':
             $id = (int)($_REQUEST['id'] ?? 0);
             $st = $db->prepare("
@@ -527,6 +640,9 @@ try {
             sendJsonResponse(true, ['header' => $hdr, 'items' => $items]);
             break;
 
+        /* ------------------------------------------------------------------
+         * Simpan pembayaran baru
+         * ------------------------------------------------------------------ */
         case 'save_payment':
             $cli    = (int)($_POST['client_id'] ?? 0);
             $date   = (string)($_POST['payment_date'] ?? '');
@@ -661,6 +777,9 @@ try {
             }
             break;
 
+        /* ------------------------------------------------------------------
+         * Hapus termin
+         * ------------------------------------------------------------------ */
         case 'delete_termin':
             $id     = (int)($_POST['id'] ?? 0);
             $cliChk = (int)($_POST['client_id'] ?? 0);
@@ -695,6 +814,9 @@ try {
             }
             break;
 
+        /* ------------------------------------------------------------------
+         * Hapus pembayaran
+         * ------------------------------------------------------------------ */
         case 'delete_payment':
             $id = (int)($_POST['id'] ?? 0);
             $db->beginTransaction();

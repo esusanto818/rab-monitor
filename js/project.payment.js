@@ -1,7 +1,19 @@
 /*
   Document      : project.payment.js
-  Description   : Pembayaran Termin per CLIENT (multi proyek).
+  Description   : Pembayaran Termin per CLIENT (multi proyek). Grid utama = daftar pembayaran dari client; klik baris ->
+                   panel detail di bawah grid (alokasi per termin + tombol Cetak Tanda Terima / Hapus).
+                   Add membuka editor: pilih CLIENT -> daftar termin yang masih punya sisa tagihan dari SEMUA proyek client tsb
+                   -> isi "Bayar Sekarang" per termin (bisa alokasi otomatis berurutan dari tanggal termin, lintas proyek).
+                   Tombol "+ Tambah Termin" membuat tagihan termin baru (project_invoices) untuk salah satu proyek client terpilih.
+                   Pembayaran tidak bisa diedit; koreksi = hapus (reverse) lalu input ulang.
+                   Kelebihan bayar (jumlah diterima > total alokasi) disimpan di excess_amount.
+                   [MULTI-PROYEK] satu pembayaran boleh mengalokasikan ke termin beberapa proyek, selama client-nya sama.
+                   [MULTI-CURRENCY] pembayaran punya mata uang + kurs (default IDR, kurs KMK pada tanggal bayar). Jumlah Diterima & Bayar Sekarang
+                   diisi dalam mata uang pembayaran; tagihan termin tetap IDR, nilai setara IDR = nilai x kurs (dibatasi sisa tagihan).
+                   [JURNAL] simpan pembayaran memposting jurnal otomatis (Kas/Bank wajib dipilih); hapus pembayaran menghapus jurnalnya.
+                   [AI-VARIANCE] Integrasi Analisis Varian Anggaran dan Risiko Proyek menggunakan Google Gemini API.
   Backend       : /rab-project/php-crud/project.paymentCRD.php
+  Cetak         : /rab-project/views/project.payment.print.php?id=<id>  (project.payment.print.js)
 */
 
 Ext.onReady(function () {
@@ -10,9 +22,9 @@ Ext.onReady(function () {
 
     var CRD = '/rab-project/php-crud/project.paymentCRD.php';
     var PRINT_URL = '/rab-project/views/project.payment.print.php?id=';
-    var ACCESS_ADD = 2;
-    var ACCESS_EDIT = 3;
-    var VEPS = 0.01;
+    var ACCESS_ADD = 2;      // level akses minimal: input pembayaran / termin
+    var ACCESS_EDIT = 3;     // level akses minimal: hapus pembayaran
+    var VEPS = 0.01;         // toleransi nilai
     var TERMIN_RULE_PCT = { 1: 30, 2: 20 };   
     var DP_PCT = 30;                          
     var allocNote = '';                       
@@ -32,74 +44,79 @@ Ext.onReady(function () {
     }
 
     // ------------------------------------------------------------
-    // [AI-VARIANCE] Fungsi Analisis Per Proyek Individual
+    // [AI-VARIANCE] Fungsi Pendukung Analisis AI
     // ------------------------------------------------------------
-    function triggerAiAnalysis(projectId) {
-        if (!projectId) {
-            Ext.Msg.alert('Peringatan', 'Tidak ada proyek yang terikat pada data ini.');
+    function triggerAiAnalysis(projectIds) {
+        if (!Ext.isArray(projectIds)) projectIds = [projectIds];
+        var uniqueIds = [], seen = {};
+        Ext.each(projectIds, function (id) {
+            id = parseInt(id, 10);
+            if (id > 0 && !seen[id]) { seen[id] = true; uniqueIds.push(id); }
+        });
+        if (!uniqueIds.length) {
+            Ext.Msg.alert('Peringatan', 'Tidak ada proyek yang terikat pada pembayaran ini.');
             return;
         }
-        
-        Ext.MessageBox.wait('AI sedang menganalisis varian anggaran & pengeluaran proyek...', 'Mohon Tunggu');
-
-        ajax({ task: 'analyze_project_variance', project_id: projectId }, function (res) {
-            Ext.MessageBox.hide();
-            if (res.success) {
-                renderAiResultPanel(res.data);
-            } else {
-                Ext.Msg.show({
-                    title: 'Kendala Layanan AI',
-                    msg: enc(res.message || 'Server AI sedang sibuk. Silakan klik tombol Analisis Varian AI sekali lagi.'),
-                    buttons: Ext.Msg.OK,
-                    icon: Ext.MessageBox.WARNING
-                });
-            }
-        }, function () {
-            Ext.MessageBox.hide();
-            Ext.Msg.alert('Gagal', 'Gagal terhubung ke server.');
-        });
-    }
-
-    function renderAiResultPanel(d) {
-        var riskColor = '#2e9e4f';
-        if (d.risk_level === 'MEDIUM') riskColor = '#e6a817';
-        else if (d.risk_level === 'HIGH' || d.risk_level === 'CRITICAL') riskColor = '#e05353';
-
-        var recHtml = '';
-        if (d.recommendations && d.recommendations.length) {
-            Ext.each(d.recommendations, function (r) {
-                recHtml += '<li style="margin-bottom:6px;">' + enc(r) + '</li>';
-            });
-        } else {
-            recHtml = '<li>Tidak ada rekomendasi khusus.</li>';
-        }
-
-        var html = '<div style="margin-top:15px; margin-bottom:25px; background:#111b24; border:1px solid #00bcd4; border-radius:6px; padding:18px; color:#ffffff !important;">' +
-                   '<div style="font-weight:bold; font-size:15px; color:#00bcd4; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">' +
-                   '<span>&#9881; AI Cost & Schedule Variance Analysis (' + enc(d.project_name || '') + ')</span>' +
-                   '<span style="background:' + riskColor + '; color:#fff; padding:3px 10px; border-radius:3px; font-size:13px;">RISK: ' + enc(d.risk_level) + '</span>' +
-                   '</div>' +
-                   '<div style="font-size:14px; line-height:22px; margin-bottom:12px; color:#ffffff !important;">' +
-                   '<b style="color:#00bcd4;">Ringkasan Eksekutif:</b> ' + enc(d.ai_summary) +
-                   '</div>' +
-                   '<div style="font-size:14px; line-height:22px; color:#ffffff !important;">' +
-                   '<b style="color:#00bcd4;">Rekomendasi Mitigasi:</b>' +
-                   '<ul style="margin:6px 0 0 18px; padding:0; color:#ffffff !important;">' + recHtml + '</ul>' +
-                   '</div>' +
-                   '</div>';
-
         var aiContainer = document.getElementById('ppAiResultContainer');
         if (!aiContainer) {
             aiContainer = document.createElement('div');
             aiContainer.id = 'ppAiResultContainer';
             dtlDiv.appendChild(aiContainer);
         }
-        aiContainer.innerHTML = html;
-        dtlDiv.style.display = 'block';
+        aiContainer.innerHTML = '<div style="padding:10px;color:#00bcd4;">AI sedang menganalisis ' + uniqueIds.length + ' proyek...</div>';
+        Ext.MessageBox.wait('AI sedang menganalisis seluruh proyek dalam pembayaran ini...', 'Mohon Tunggu');
+        var index = 0, errors = 0;
+        function next() {
+            if (index >= uniqueIds.length) {
+                Ext.MessageBox.hide();
+                if (errors) Ext.Msg.alert('Analisis AI', 'Analisis selesai dengan ' + errors + ' proyek gagal. Periksa pesan pada setiap proyek.');
+                return;
+            }
+            var projectId = uniqueIds[index++];
+            ajax({ task: 'analyze_project_variance', project_id: projectId }, function (res) {
+                if (res && res.success && res.data) {
+                    renderAiResultPanel(res.data, true);
+                } else {
+                    errors++;
+                    renderAiErrorPanel(projectId, (res && res.message) || 'Analisis AI gagal.');
+                }
+                next();
+            }, function () {
+                errors++;
+                renderAiErrorPanel(projectId, 'Gagal terhubung ke server.');
+                next();
+            });
+        }
+        next();
+    }
 
-        setTimeout(function() {
-            dtlDiv.scrollTop = dtlDiv.scrollHeight;
-        }, 100);
+    function renderAiErrorPanel(projectId, message) {
+        var container = document.getElementById('ppAiResultContainer');
+        if (!container) return;
+        var node = document.createElement('div');
+        node.style.cssText = 'margin-top:12px;padding:12px;border:1px solid #b42318;border-radius:5px;color:#fff;background:#30191b;';
+        node.innerHTML = '<b>Proyek ID ' + enc(projectId) + '</b><div>' + enc(message) + '</div>';
+        container.appendChild(node);
+    }
+
+    function renderAiResultPanel(d, append) {
+        var riskColor = '#2e9e4f';
+        if (d.risk_level === 'MEDIUM') riskColor = '#e6a817';
+        else if (d.risk_level === 'HIGH' || d.risk_level === 'CRITICAL') riskColor = '#e05353';
+        var recHtml = '';
+        if (d.recommendations && d.recommendations.length) {
+            Ext.each(d.recommendations, function (r) { recHtml += '<li style="margin-bottom:6px;">' + enc(r) + '</li>'; });
+        } else { recHtml = '<li>Tidak ada rekomendasi khusus.</li>'; }
+        var html = '<div style="margin-top:15px;margin-bottom:18px;background:#111b24;border:1px solid #00bcd4;border-radius:6px;padding:18px;color:#fff !important;">' +
+            '<div style="font-weight:bold;font-size:15px;color:#00bcd4;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">' +
+            '<span>&#9881; AI Cost &amp; Schedule Variance Analysis — ' + enc(d.project_name || ('Proyek #' + d.project_id)) + '</span>' +
+            '<span style="background:' + riskColor + ';color:#fff;padding:3px 10px;border-radius:3px;font-size:13px;white-space:nowrap;">RISK: ' + enc(d.risk_level || 'UNKNOWN') + '</span></div>' +
+            '<div style="font-size:14px;line-height:22px;margin-bottom:12px;color:#fff !important;"><b style="color:#00bcd4;">Ringkasan Eksekutif:</b> ' + enc(d.ai_summary || '-') + '</div>' +
+            '<div style="font-size:14px;line-height:22px;color:#fff !important;"><b style="color:#00bcd4;">Rekomendasi Mitigasi:</b><ul style="margin:6px 0 0 18px;padding:0;color:#fff !important;">' + recHtml + '</ul></div></div>';
+        var aiContainer = document.getElementById('ppAiResultContainer');
+        if (!aiContainer) { aiContainer = document.createElement('div'); aiContainer.id = 'ppAiResultContainer'; dtlDiv.appendChild(aiContainer); }
+        if (append) aiContainer.insertAdjacentHTML('beforeend', html); else aiContainer.innerHTML = html;
+        dtlDiv.style.display = 'block';
     }
 
     function enc(v) { return Ext.util.Format.htmlEncode(v == null ? '' : v); }
@@ -156,9 +173,13 @@ Ext.onReady(function () {
     }
     function maxPay(remaining) { var r = curRate(); return r > 0 ? round2(remaining / r) : 0; }
 
+    // ------------------------------------------------------------
+    // 0. Panel Detail Dinamis Berbasis Persentase Tinggi Layanan
+    // ------------------------------------------------------------
     var gridContainer = document.getElementById('divMainGrid');
     var screenH = window.innerHeight || document.documentElement.clientHeight || 700;
     
+    // Alokasi porsi grid utama & panel detail mengikuti persentase tinggi layar
     var mainHeight = Math.round(screenH * 0.38);
     var dtlHeight  = Math.round(screenH * 0.45);
 
@@ -179,6 +200,7 @@ Ext.onReady(function () {
     dtlDiv.className = 'detail-panel-container';
     dtlDiv.style.display = 'none';
     
+    // Pengaturan tinggi dan scroller otomatis berbasis persentase screen
     dtlDiv.style.height = dtlHeight + 'px';
     dtlDiv.style.maxHeight = dtlHeight + 'px';
     dtlDiv.style.overflowY = 'auto';     
@@ -190,6 +212,7 @@ Ext.onReady(function () {
         gridContainer.parentNode.insertBefore(dtlDiv, gridContainer.nextSibling);
     }
 
+    // Penyesuaian dinamis saat jendela peramban diubah ukurannya (resize)
     Ext.EventManager.onWindowResize(function () {
         var newH = window.innerHeight || document.documentElement.clientHeight || 700;
         var newDtlH = Math.round(newH * 0.45);
@@ -275,43 +298,19 @@ Ext.onReady(function () {
 
         document.getElementById('ppBtnPrint').onclick = function () { printReceipt(h.id); };
         document.getElementById('ppBtnAi').onclick = function () {
-            var firstProjId = (items.length > 0) ? items[0].project_id : null;
-            triggerAiAnalysis(firstProjId);
+            var projectIds = [];
+            Ext.each(items, function (item) { if (item && item.project_id) projectIds.push(item.project_id); });
+            triggerAiAnalysis(projectIds);
         };
     }
 
     function printReceipt(id) {
-        id = parseInt(id, 10);
-        if (!id || id < 1) {
-            Ext.Msg.alert('Pilih Pembayaran', 'Pilih satu pembayaran terlebih dahulu.');
-            return;
-        }
-        var w = window.open(PRINT_URL + encodeURIComponent(id), '_blank',
-                            'width=1000,height=800,scrollbars=yes,resizable=yes');
-        if (!w) {
-            Ext.Msg.alert('Popup diblokir', 'Izinkan pop-up untuk situs ini, lalu klik Printing kembali.');
-        }
+        window.open(PRINT_URL + encodeURIComponent(id), '_blank', 'width=900,height=700,scrollbars=yes,resizable=yes');
     }
 
-    function bindMainPrintButton() {
-        var el = document.getElementById('printData') ||
-                 document.getElementById('printing') ||
-                 document.getElementById('printBtn') ||
-                 document.getElementById('btnPrinting');
-        if (!el || el.getAttribute('data-pp-list-print-bound') === '1') return;
-        el.setAttribute('data-pp-list-print-bound', '1');
-        el.addEventListener('click', function (ev) {
-            if (ev && ev.preventDefault) ev.preventDefault();
-            if (ev && ev.stopImmediatePropagation) ev.stopImmediatePropagation();
-            else if (ev && ev.stopPropagation) ev.stopPropagation();
-            var w = window.open('/rab-project/views/project.payment.list.print.php', '_blank',
-                                'width=1100,height=800,scrollbars=yes,resizable=yes');
-            if (!w) {
-                Ext.Msg.alert('Popup diblokir', 'Izinkan pop-up untuk situs ini, lalu klik Printing kembali.');
-            }
-        }, true);
-    }
-
+    // ------------------------------------------------------------
+    // 1. Fields & Stores
+    // ------------------------------------------------------------
     var payField = [
         { name: 'id' }, { name: 'payment_no' }, { name: 'payment_date' },
         { name: 'client_id' }, { name: 'client_name' }, { name: 'project_names' },
@@ -376,6 +375,9 @@ Ext.onReady(function () {
     });
     mainDs.load();
 
+    // ------------------------------------------------------------
+    // 2. Main Grid (Daftar Pembayaran)
+    // ------------------------------------------------------------
     var gridMain = new Ext.grid.GridPanel({
         store: mainDs,
         renderTo: 'divMainGrid',
@@ -420,10 +422,10 @@ Ext.onReady(function () {
     }
     editDataDisable();
     updateMainButtons();
-    bindMainPrintButton();
-    setTimeout(bindMainPrintButton, 250);
-    setTimeout(bindMainPrintButton, 1000);
 
+    // ------------------------------------------------------------
+    // 3. Editor Pembayaran
+    // ------------------------------------------------------------
     var itemGrid = new stdGridEditor({
         store: outDs,
         renderTo: 'editorFormGrid',
@@ -996,6 +998,9 @@ Ext.onReady(function () {
         setTimeout(function () { fitGrid(); try { itemGrid.getView().layout(); } catch (e) {} }, 50);
     }
 
+    // ------------------------------------------------------------
+    // 4. Action Handlers
+    // ------------------------------------------------------------
     document.getElementById('addData').onclick = function () {
         if (getFormAccess() < ACCESS_ADD) {
             Ext.Msg.alert('Akses Ditolak', 'Tidak memiliki hak akses.');
