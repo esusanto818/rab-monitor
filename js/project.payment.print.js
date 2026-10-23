@@ -140,8 +140,11 @@
     function loadAiResults(projectIds, projectMap) {
         var loading = document.getElementById('aiLoading');
         var results = document.getElementById('aiResults');
+        var printButton = document.getElementById('btnPrintReceipt');
+        if (printButton) { printButton.disabled = true; printButton.textContent = 'Memuat hasil AI...'; }
         if (!projectIds.length) {
             if (loading) loading.textContent = 'Tidak ada proyek yang terhubung dengan pembayaran ini.';
+            if (printButton) { printButton.disabled = false; printButton.textContent = 'Cetak'; }
             return;
         }
 
@@ -180,6 +183,7 @@
                 if (completed === projectIds.length) {
                     if (loading) loading.remove();
                     results.innerHTML = projectIds.map(function (id) { return htmlByProject[id]; }).join('');
+                    if (printButton) { printButton.disabled = false; printButton.textContent = 'Cetak'; }
                 }
             });
         });
