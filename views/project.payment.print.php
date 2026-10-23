@@ -42,7 +42,7 @@ $paymentId = intval($_GET['id'] ?? 0);
         .sign .space { height: 58px; }
         .sign .line { border-top: 1px solid #333; display: inline-block; min-width: 160px; padding-top: 4px; }
         .err { padding: 30px; text-align: center; color: #b42318; font-size: 14px; }
-        .ai-section { margin-top: 24px; border: 1px solid #b8d8d5; padding: 12px; break-inside: avoid; }
+        .ai-section { margin-top: 24px; border: 1px solid #b8d8d5; padding: 12px; break-inside: auto; page-break-inside: auto; }
         .ai-section h3 { margin: 0 0 10px; color: #075e58; font-size: 15px; }
         .ai-project { border-top: 1px solid #d9e7e5; padding-top: 10px; margin-top: 10px; }
         .ai-risk { display: inline-block; padding: 4px 8px; border-radius: 3px; font-weight: bold; background: #eef2f4; }
@@ -54,7 +54,8 @@ $paymentId = intval($_GET['id'] ?? 0);
             body { background: #fff; }
             .toolbar { display: none; }
             .sheet { border: none; margin: 0; width: auto; min-height: 0; padding: 0; }
-            .ai-section, .ai-project { break-inside: avoid; page-break-inside: avoid; }
+            .ai-section, .ai-project { break-inside: auto !important; page-break-inside: auto !important; display: block !important; visibility: visible !important; }
+            .ai-section * { visibility: visible !important; }
             .ai-section.force-page-break { break-before: page; page-break-before: always; }
         }
         @media screen and (max-width: 760px) {
@@ -74,6 +75,6 @@ $paymentId = intval($_GET['id'] ?? 0);
         window.PAYMENT_ID = <?php echo json_encode($paymentId); ?>;
         window.PAYMENT_CRD_URL = '/rab-project/php-crud/project.paymentCRD.php';
     </script>
-    <script src="/rab-project/js/project.payment.print.js"></script>
+    <script src="/rab-project/js/project.payment.print.js?v=20261023-fix2"></script>
 </body>
 </html>
