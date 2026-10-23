@@ -22,6 +22,8 @@ Ext.onReady(function () {
     var editingId = 0;        // 0 = SPK baru
     var hdrForm = null, matBar = null;
     var fDate, fProject, fForeman, fDesc, fRemark, fMat, quotaDiv;
+    // [SPK-TASK] Task proyek yang dipilih untuk menjadi ruang lingkup SPK.
+    var selectedTasks = [], taskSelect = null, taskListDiv = null;
 
     function getFormAccess() { return (typeof formAccess !== 'undefined') ? formAccess : (window.formAccess || 0); }
     function enc(v) { return Ext.util.Format.htmlEncode(v == null ? '' : v); }
@@ -90,18 +92,27 @@ Ext.onReady(function () {
     }
 
     function renderDetailPanel(d) {
-        var h = d.header, pay = d.pay, items = d.items || [];
+        var h = d.header, pay = d.pay, items = d.items || [], tasks = d.tasks || [];
+        var wf = h.workflow_status || 'Draft';
         var btns = actionBtn('spkPrintBtn', 'Cetak SPK', '#2e6da4');
-        if (h.status === 'Draft') { btns += actionBtn('spkIssueBtn', 'Terbitkan SPK', '#03615e'); }
-        if (h.status === 'Diterbitkan') { btns += actionBtn('spkCloseBtn', 'Tutup SPK (Selesai)', '#555555'); }
-        if ((h.status === 'Draft' || h.status === 'Diterbitkan') && !(parseInt(d.issue_count, 10) > 0)) { btns += actionBtn('spkCancelBtn', 'Batalkan SPK', '#8e2b22'); }
+        // [SPK-WORKFLOW] Tombol mengikuti alur Draft -> Persetujuan -> Pelaksanaan -> Verifikasi.
+        if (wf === 'Draft' && h.status === 'Draft') { btns += actionBtn('spkSubmitApprovalBtn', 'Ajukan Persetujuan', '#6f42c1'); }
+        if (wf === 'Menunggu Persetujuan') { btns += actionBtn('spkApproveBtn', 'Setujui SPK', '#218838'); btns += actionBtn('spkRejectBtn', 'Tolak SPK', '#c0392b'); }
+        if (wf === 'Disetujui' && h.status === 'Draft') { btns += actionBtn('spkIssueBtn', 'Terbitkan SPK', '#03615e'); }
+        if (wf === 'Pelaksanaan' && h.status === 'Diterbitkan') { btns += actionBtn('spkRequestVerificationBtn', 'Ajukan Verifikasi', '#6f42c1'); }
+        if (wf === 'Menunggu Verifikasi' && h.status === 'Diterbitkan') { btns += actionBtn('spkCloseBtn', 'Verifikasi & Selesaikan', '#555555'); }
+        if (wf !== 'Selesai' && wf !== 'Dibatalkan' && !(parseInt(d.issue_count, 10) > 0) && (h.status === 'Draft' || h.status === 'Diterbitkan')) { btns += actionBtn('spkCancelBtn', 'Batalkan SPK', '#8e2b22'); }
 
         var html = '<div style="float:right; margin:2px 4px 0 0;">' + btns + '</div>' +
-                   '<h3 class="detail-title">Detail SPK: ' + enc(h.spk_no) + ' <span style="color:' + statusColor(h.status) + ';">(' + enc(h.status) + ')</span></h3>' +
+                   '<h3 class="detail-title">Detail SPK: ' + enc(h.spk_no) + ' <span style="color:' + statusColor(h.status) + ';">(' + enc(h.status) + ')</span>' +
+                   ' <span style="font-size:12px;color:#9fc3d1;">Alur: ' + enc(wf) + '</span></h3>' +
                    '<hr class="detail-hr" />' +
                    '<div style="padding:4px 2px 6px 2px;">Tanggal: <b>' + enc(h.spk_date) + '</b> &nbsp;|&nbsp; Proyek: <b>' + enc(h.project_name) +
                    '</b> &nbsp;|&nbsp; Klien: <b>' + enc(h.client_name || '-') + '</b> &nbsp;|&nbsp; Mandor: <b>' + enc(h.foreman || '-') + '</b>' +
                    (h.description ? ' &nbsp;|&nbsp; Uraian: ' + enc(h.description) : '') + '</div>' +
+                   '<div style="padding:6px 10px;margin:6px 0;background:#172936;border-radius:3px;"><b>Task Proyek dalam SPK</b><ul style="margin:6px 0 2px 18px;">' +
+                   (tasks.length ? tasks.map(function(t){ return '<li>' + enc(t.task_name) + ' <span style="color:#9fc3d1;">(' + enc(t.status || 'Belum Mulai') + ')</span></li>'; }).join('') : '<li>Belum ada task terhubung.</li>') +
+                   '</ul></div>' +
                    '<div style="padding:4px 10px; margin-bottom:8px; background:rgba(15,113,194,0.18); border-radius:3px;">Pembayaran proyek: <b>' + fmtAmt(pay.paid_amount) +
                    '</b> dari kontrak <b>' + fmtAmt(pay.contract_value) + '</b> (<b>' + fmtPct(pay.paid_pct) + '</b>) &rarr; batas material saat ini <b>' + fmtPct(pay.allowed_pct) +
                    '</b> dari qty RAB (dibayar x 2).</div>' +
@@ -121,13 +132,17 @@ Ext.onReady(function () {
 
         var b;
         if ((b = document.getElementById('spkPrintBtn'))) b.onclick = function () { window.open('../pdf/spk.php?id=' + h.id, '_blank', 'width=900,height=800,scrollbars=yes,resizable=yes'); };
-        if ((b = document.getElementById('spkIssueBtn'))) b.onclick = function () { doAction('issue', h, 'Terbitkan SPK <b>' + enc(h.spk_no) + '</b>? Sistem memeriksa pembayaran termin dan kuota material.'); };
-        if ((b = document.getElementById('spkCloseBtn'))) b.onclick = function () { doAction('close', h, 'Tutup SPK <b>' + enc(h.spk_no) + '</b>? Sisa jatah yang belum terpakai kembali menjadi kuota proyek.'); };
+        if ((b = document.getElementById('spkSubmitApprovalBtn'))) b.onclick = function () { doAction('submit_approval', h, 'Ajukan SPK <b>' + enc(h.spk_no) + '</b> untuk persetujuan?', ACCESS_EDIT); };
+        if ((b = document.getElementById('spkApproveBtn'))) b.onclick = function () { doAction('approve', h, 'Setujui SPK <b>' + enc(h.spk_no) + '</b>?', ACCESS_ACTION); };
+        if ((b = document.getElementById('spkRejectBtn'))) b.onclick = function () { doAction('reject', h, 'Tolak SPK <b>' + enc(h.spk_no) + '</b>? Draft dapat diperbaiki dan diajukan ulang.', ACCESS_ACTION); };
+        if ((b = document.getElementById('spkIssueBtn'))) b.onclick = function () { doAction('issue', h, 'Terbitkan SPK <b>' + enc(h.spk_no) + '</b>? Aturan pembayaran/kuota tetap berlaku jika SPK berisi material.', ACCESS_ACTION); };
+        if ((b = document.getElementById('spkRequestVerificationBtn'))) b.onclick = function () { doAction('request_verification', h, 'Ajukan SPK <b>' + enc(h.spk_no) + '</b> untuk verifikasi hasil pekerjaan?', ACCESS_EDIT); };
+        if ((b = document.getElementById('spkCloseBtn'))) b.onclick = function () { doAction('close', h, 'Verifikasi hasil pekerjaan dan selesaikan SPK <b>' + enc(h.spk_no) + '</b>?', ACCESS_ACTION); };
         if ((b = document.getElementById('spkCancelBtn'))) b.onclick = function () { doAction('cancel', h, 'Batalkan SPK <b>' + enc(h.spk_no) + '</b>?'); };
     }
 
-    function doAction(action, h, text) {
-        if (!needAccess(ACCESS_ACTION, 'Anda tidak memiliki hak akses untuk aksi ini.')) return;
+    function doAction(action, h, text, requiredLevel) {
+        if (!needAccess(requiredLevel || ACCESS_ACTION, 'Anda tidak memiliki hak akses untuk aksi ini.')) return;
         Ext.Msg.confirm('Konfirmasi', text, function (btn) {
             if (btn !== 'yes') return;
             ajax({ action: action, id: h.id }, function (res) {
@@ -149,8 +164,8 @@ Ext.onReady(function () {
     // PENTING: assignment polos (bukan var/let) -- konvensi search box global.
     mainDs = new Ext.data.JsonStore({
         url: CRD, baseParams: { action: 'list' }, root: 'data', totalProperty: 'totalCount', idProperty: 'id',
-        fields: ['id', 'spk_no', 'spk_date', 'project_id', 'project_name', 'foreman', 'description', 'status', 'remark',
-                 { name: 'item_count', type: 'int' }, { name: 'used_pct', type: 'float' }],
+        fields: ['id', 'spk_no', 'spk_date', 'project_id', 'project_name', 'foreman', 'description', 'status', 'workflow_status', 'remark',
+                 { name: 'item_count', type: 'int' }, { name: 'task_count', type: 'int' }, { name: 'used_pct', type: 'float' }],
         listeners: { exception: storeError }
     });
     mainDs.load();
@@ -185,8 +200,11 @@ Ext.onReady(function () {
             { header: 'Uraian', dataIndex: 'description', width: 220, renderer: function (v) { return CellWrap(v || ''); } },
             { header: 'Item', dataIndex: 'item_count', width: 50, align: 'center' },
             { header: 'Terpakai', dataIndex: 'used_pct', width: 80, align: 'right', renderer: function (v) { return fmtPct(v); } },
-            { header: 'Status', dataIndex: 'status', width: 100, align: 'center',
-              renderer: function (v) { return '<span style="color:' + statusColor(v) + ';font-weight:bold;">' + enc(v) + '</span>'; } }
+            { header: 'Status Material', dataIndex: 'status', width: 95, align: 'center',
+              renderer: function (v) { return '<span style="color:' + statusColor(v) + ';font-weight:bold;">' + enc(v) + '</span>'; } },
+            { header: 'Alur SPK', dataIndex: 'workflow_status', width: 130, align: 'center',
+              renderer: function (v) { return '<b>' + enc(v || 'Draft') + '</b>'; } },
+            { header: 'Task', dataIndex: 'task_count', width: 45, align: 'center' }
         ],
         viewConfig: { forceFit: true },
         loadMask: true,
@@ -247,13 +265,60 @@ Ext.onReady(function () {
         if (g && !document.getElementById('spkHdrForm')) {
             var hdr = document.createElement('div'); hdr.id = 'spkHdrForm'; hdr.style.cssText = 'margin-bottom:2px;';
             g.parentNode.insertBefore(hdr, g);
+            // [SPK-TASK] Pemilih task proyek dipisah dari material agar SPK tetap bisa dipakai untuk berbagai pekerjaan.
+            var taskBox = document.createElement('div'); taskBox.id = 'spkTaskBox'; taskBox.style.cssText = 'margin:8px 4px;padding:10px;background:#172936;border:1px solid #29495b;border-radius:4px;color:#dcebf0;';
+            taskBox.innerHTML = '<b>Task Proyek (wajib)</b><div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><select id="spkTaskSelect" style="min-width:320px;max-width:70%;padding:6px;background:#fff;color:#222;"><option value="">Pilih proyek terlebih dahulu...</option></select><button type="button" id="spkAddTask" style="padding:6px 12px;">+ Tambah Task</button></div><div id="spkTaskList"></div><div style="font-size:11px;color:#9fc3d1;margin-top:5px;">Satu task hanya dapat terikat pada satu SPK aktif. Task harus berasal dari proyek yang dipilih.</div>';
+            g.parentNode.insertBefore(taskBox, g);
             var q = document.createElement('div'); q.id = 'spkQuotaInfo'; q.style.cssText = 'margin:2px 4px 6px 4px;';
             g.parentNode.insertBefore(q, g);
             var bar = document.createElement('div'); bar.id = 'spkMatBar'; bar.style.cssText = 'margin-bottom:6px;';
             g.parentNode.insertBefore(bar, g);
         }
         quotaDiv = document.getElementById('spkQuotaInfo');
+        taskSelect = document.getElementById('spkTaskSelect');
+        taskListDiv = document.getElementById('spkTaskList');
+        var addTaskButton = document.getElementById('spkAddTask');
+        if (addTaskButton && !addTaskButton._spkBound) {
+            addTaskButton._spkBound = true;
+            addTaskButton.onclick = function () {
+                var id = parseInt(taskSelect.value, 10);
+                if (!id) { showErr('Pilih task proyek terlebih dahulu.'); return; }
+                if (selectedTasks.some(function(t){ return parseInt(t.id,10) === id; })) { showErr('Task sudah ada di daftar SPK.'); return; }
+                var opt = taskSelect.options[taskSelect.selectedIndex];
+                selectedTasks.push({id:id, task_name:opt.getAttribute('data-name') || opt.text, description:opt.getAttribute('data-description') || '', status:opt.getAttribute('data-status') || ''});
+                renderSelectedTasks();
+            };
+        }
     })();
+
+    // [SPK-TASK] Render task terpilih dan muat task yang valid untuk proyek.
+    function renderSelectedTasks() {
+        if (!taskListDiv) return;
+        if (!selectedTasks.length) { taskListDiv.innerHTML = '<div style="color:#e6a817;">Belum ada task dipilih.</div>'; return; }
+        var html = '<table style="width:100%;border-collapse:collapse;"><thead><tr style="text-align:left;border-bottom:1px solid #365567;"><th style="padding:5px;">Task</th><th style="padding:5px;">Jadwal</th><th style="padding:5px;">Status</th><th></th></tr></thead><tbody>';
+        selectedTasks.forEach(function(t, idx) {
+            html += '<tr style="border-bottom:1px solid #29495b;"><td style="padding:6px;">' + enc(t.task_name) + '<div style="font-size:11px;color:#9fc3d1;">' + enc(t.description || '') + '</div></td>' +
+                    '<td style="padding:6px;white-space:nowrap;">' + enc(t.start_date || '-') + ' - ' + enc(t.end_date || '-') + '</td><td style="padding:6px;">' + enc(t.status || 'Belum Mulai') + '</td>' +
+                    '<td><button type="button" data-spk-task-index="' + idx + '" style="color:#c0392b;">Hapus</button></td></tr>';
+        });
+        html += '</tbody></table>'; taskListDiv.innerHTML = html;
+        var buttons = taskListDiv.querySelectorAll('button[data-spk-task-index]');
+        for (var i=0;i<buttons.length;i++) buttons[i].onclick = function(){ selectedTasks.splice(parseInt(this.getAttribute('data-spk-task-index'),10),1); renderSelectedTasks(); };
+    }
+    function loadProjectTasks(projectId, existing) {
+        selectedTasks = (existing || []).map(function(t){ return {id:parseInt(t.id || t.task_id,10),task_name:t.task_name || '',description:t.description || '',start_date:t.start_date || '',end_date:t.end_date || '',status:t.status || ''}; });
+        if (taskSelect) taskSelect.innerHTML = '<option value="">Memuat task proyek...</option>';
+        if (!projectId) { if(taskSelect) taskSelect.innerHTML='<option value="">Pilih proyek terlebih dahulu...</option>'; renderSelectedTasks(); return; }
+        ajax({action:'lookup_tasks',project_id:projectId,exclude_id:editingId},function(res){
+            if(!res.success){showErr(res.message || 'Gagal memuat task proyek.');return;}
+            if(taskSelect){
+                var opts='<option value="">Pilih task proyek...</option>';
+                (res.data || []).forEach(function(t){opts+='<option value="'+enc(t.id)+'" data-name="'+enc(t.task_name)+'" data-description="'+enc(t.description || '')+'" data-status="'+enc(t.status || '')+'">'+enc(t.task_name)+' ('+enc(t.status || 'Belum Mulai')+')</option>';});
+                taskSelect.innerHTML=opts;
+            }
+            renderSelectedTasks();
+        });
+    }
 
     function ensureHdrForm() {
         if (hdrForm) { hdrForm.doLayout(); matBar.doLayout(); return; }
@@ -317,6 +382,7 @@ Ext.onReady(function () {
         itemDs.removeAll();
         fMat.clearValue();
         loadQuotaInfo();
+        loadProjectTasks(fProject.getValue(), []); // [SPK-TASK] Task hanya dimuat dari proyek aktif
     }
 
     function addMaterial() {
@@ -350,6 +416,7 @@ Ext.onReady(function () {
             showEditor('SPK Baru');
             fDate.setValue(new Date()); fProject.clearValue(); fForeman.setValue(''); fDesc.setValue(''); fRemark.setValue('');
             itemDs.removeAll(); fMat.clearValue(); quotaDiv.innerHTML = '';
+            selectedTasks = []; renderSelectedTasks(); if (taskSelect) taskSelect.innerHTML = '<option value="">Pilih proyek terlebih dahulu...</option>'; // [SPK-TASK]
         } });
     };
 
@@ -368,6 +435,7 @@ Ext.onReady(function () {
                 fForeman.setValue(h.foreman || ''); fDesc.setValue(h.description || ''); fRemark.setValue(h.remark || '');
                 fMat.clearValue(); itemDs.removeAll();
                 loadQuotaInfo();
+                loadProjectTasks(h.project_id, res.tasks || []); // [SPK-TASK] Pulihkan task draft saat edit
                 // kuota tiap material (tanpa menghitung SPK ini sendiri) untuk validasi qty
                 ajax({ action: 'lookup_materials', project_id: h.project_id, exclude_id: h.id }, function (q) {
                     var map = {};
@@ -394,11 +462,12 @@ Ext.onReady(function () {
             arr.push({ material_id: r.get('material_id'), qty: q, notes: r.get('notes') || '' });
         });
         if (err) { showErr(err); return; }
-        if (!arr.length) { showErr('Tambahkan minimal satu material.'); return; }
+        if (!selectedTasks.length) { showErr('Pilih minimal satu task proyek untuk SPK.'); return; }
         ajax({
             action: 'save', id: editingId, project_id: fProject.getValue(), spk_date: ymd(fDate.getValue()),
             foreman: fForeman.getValue(), description: fDesc.getValue(), remark: fRemark.getValue(),
-            details: Ext.util.JSON.encode(arr)
+            details: Ext.util.JSON.encode(arr),
+            task_details: Ext.util.JSON.encode(selectedTasks.map(function(t){return {task_id:t.id};})) // [SPK-TASK]
         }, function (res) {
             if (res.success) {
                 Ext.Msg.alert('Sukses', res.message || 'SPK tersimpan.');
