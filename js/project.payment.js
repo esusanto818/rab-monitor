@@ -46,77 +46,123 @@ Ext.onReady(function () {
     // ------------------------------------------------------------
     // [AI-VARIANCE] Fungsi Pendukung Analisis AI
     // ------------------------------------------------------------
-    function triggerAiAnalysis(projectIds) {
-        if (!Ext.isArray(projectIds)) projectIds = [projectIds];
-        var uniqueIds = [], seen = {};
-        Ext.each(projectIds, function (id) {
-            id = parseInt(id, 10);
-            if (id > 0 && !seen[id]) { seen[id] = true; uniqueIds.push(id); }
-        });
-        if (!uniqueIds.length) {
-            Ext.Msg.alert('Peringatan', 'Tidak ada proyek yang terikat pada pembayaran ini.');
+    function triggerAiAnalysis(projectId) {
+        if (!projectId) {
+            Ext.Msg.alert('Peringatan', 'Tidak ada proyek yang terikat pada data ini.');
             return;
         }
+        
+        Ext.MessageBox.wait('AI sedang menganalisis varian anggaran & pengeluaran proyek...', 'Mohon Tunggu');
+
+        ajax({ task: 'analyze_project_variance', project_id: projectId }, function (res) {
+            Ext.MessageBox.hide();
+            if (res.success) {
+                renderAiResultPanel(res.data);
+            } else {
+                Ext.Msg.show({
+                    title: 'Kendala Layanan AI',
+                    msg: enc(res.message || 'Server AI sedang sibuk. Silakan klik tombol Analisis Varian AI sekali lagi.'),
+                    buttons: Ext.Msg.OK,
+                    icon: Ext.MessageBox.WARNING
+                });
+            }
+        }, function () {
+            Ext.MessageBox.hide();
+            Ext.Msg.alert('Gagal', 'Gagal terhubung ke server.');
+        });
+    }
+
+    function renderAiResultPanel(d, projectName, append) {
+        var risk = String(d.risk_level || 'BELUM DIKETAHUI').toUpperCase();
+        var riskColor = '#2e9e4f'; // LOW
+        if (risk === 'MEDIUM') riskColor = '#e6a817';
+        else if (risk === 'HIGH' || risk === 'CRITICAL') riskColor = '#e05353';
+
+        var recHtml = '';
+        if (d.recommendations && d.recommendations.length) {
+            Ext.each(d.recommendations, function (r) {
+                recHtml += '<li style="margin-bottom:6px;">' + enc(r) + '</li>';
+            });
+        } else {
+            recHtml = '<li>Tidak ada rekomendasi khusus.</li>';
+        }
+
+        var html = '<div class="pp-ai-project" style="margin-top:15px; margin-bottom:20px; background:#111b24; border:1px solid #00bcd4; border-radius:6px; padding:18px; color:#ffffff !important;">' +
+                   (projectName ? '<div style="font-weight:bold; color:#b7dce2; margin-bottom:8px;">Proyek: ' + enc(projectName) + '</div>' : '') +
+                   '<div style="font-weight:bold; font-size:15px; color:#00bcd4; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">' +
+                   '<span>&#9881; AI Cost &amp; Schedule Variance Analysis</span>' +
+                   '<span style="background:' + riskColor + '; color:#fff; padding:3px 10px; border-radius:3px; font-size:13px;">RISK: ' + enc(risk) + '</span>' +
+                   '</div>' +
+                   '<div style="font-size:14px; line-height:22px; margin-bottom:12px; color:#ffffff !important;">' +
+                   '<b style="color:#00bcd4;">Ringkasan Eksekutif:</b> ' + enc(d.ai_summary || '-') +
+                   '</div>' +
+                   '<div style="font-size:14px; line-height:22px; color:#ffffff !important;">' +
+                   '<b style="color:#00bcd4;">Rekomendasi Mitigasi:</b>' +
+                   '<ul style="margin:6px 0 0 18px; padding:0; color:#ffffff !important;">' + recHtml + '</ul>' +
+                   (d.created_at ? '<div style="font-size:11px; color:#b7c6cc; margin-top:10px;">Analisis terakhir: ' + enc(d.created_at) + '</div>' : '') +
+                   '</div></div>';
+
         var aiContainer = document.getElementById('ppAiResultContainer');
         if (!aiContainer) {
             aiContainer = document.createElement('div');
             aiContainer.id = 'ppAiResultContainer';
             dtlDiv.appendChild(aiContainer);
         }
-        aiContainer.innerHTML = '<div style="padding:10px;color:#00bcd4;">AI sedang menganalisis ' + uniqueIds.length + ' proyek...</div>';
-        Ext.MessageBox.wait('AI sedang menganalisis seluruh proyek dalam pembayaran ini...', 'Mohon Tunggu');
-        var index = 0, errors = 0;
-        function next() {
-            if (index >= uniqueIds.length) {
-                Ext.MessageBox.hide();
-                if (errors) Ext.Msg.alert('Analisis AI', 'Analisis selesai dengan ' + errors + ' proyek gagal. Periksa pesan pada setiap proyek.');
-                return;
-            }
-            var projectId = uniqueIds[index++];
-            ajax({ task: 'analyze_project_variance', project_id: projectId }, function (res) {
-                if (res && res.success && res.data) {
-                    renderAiResultPanel(res.data, true);
-                } else {
-                    errors++;
-                    renderAiErrorPanel(projectId, (res && res.message) || 'Analisis AI gagal.');
-                }
-                next();
-            }, function () {
-                errors++;
-                renderAiErrorPanel(projectId, 'Gagal terhubung ke server.');
-                next();
-            });
-        }
-        next();
-    }
-
-    function renderAiErrorPanel(projectId, message) {
-        var container = document.getElementById('ppAiResultContainer');
-        if (!container) return;
-        var node = document.createElement('div');
-        node.style.cssText = 'margin-top:12px;padding:12px;border:1px solid #b42318;border-radius:5px;color:#fff;background:#30191b;';
-        node.innerHTML = '<b>Proyek ID ' + enc(projectId) + '</b><div>' + enc(message) + '</div>';
-        container.appendChild(node);
-    }
-
-    function renderAiResultPanel(d, append) {
-        var riskColor = '#2e9e4f';
-        if (d.risk_level === 'MEDIUM') riskColor = '#e6a817';
-        else if (d.risk_level === 'HIGH' || d.risk_level === 'CRITICAL') riskColor = '#e05353';
-        var recHtml = '';
-        if (d.recommendations && d.recommendations.length) {
-            Ext.each(d.recommendations, function (r) { recHtml += '<li style="margin-bottom:6px;">' + enc(r) + '</li>'; });
-        } else { recHtml = '<li>Tidak ada rekomendasi khusus.</li>'; }
-        var html = '<div style="margin-top:15px;margin-bottom:18px;background:#111b24;border:1px solid #00bcd4;border-radius:6px;padding:18px;color:#fff !important;">' +
-            '<div style="font-weight:bold;font-size:15px;color:#00bcd4;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">' +
-            '<span>&#9881; AI Cost &amp; Schedule Variance Analysis — ' + enc(d.project_name || ('Proyek #' + d.project_id)) + '</span>' +
-            '<span style="background:' + riskColor + ';color:#fff;padding:3px 10px;border-radius:3px;font-size:13px;white-space:nowrap;">RISK: ' + enc(d.risk_level || 'UNKNOWN') + '</span></div>' +
-            '<div style="font-size:14px;line-height:22px;margin-bottom:12px;color:#fff !important;"><b style="color:#00bcd4;">Ringkasan Eksekutif:</b> ' + enc(d.ai_summary || '-') + '</div>' +
-            '<div style="font-size:14px;line-height:22px;color:#fff !important;"><b style="color:#00bcd4;">Rekomendasi Mitigasi:</b><ul style="margin:6px 0 0 18px;padding:0;color:#fff !important;">' + recHtml + '</ul></div></div>';
-        var aiContainer = document.getElementById('ppAiResultContainer');
-        if (!aiContainer) { aiContainer = document.createElement('div'); aiContainer.id = 'ppAiResultContainer'; dtlDiv.appendChild(aiContainer); }
-        if (append) aiContainer.insertAdjacentHTML('beforeend', html); else aiContainer.innerHTML = html;
+        if (append) aiContainer.innerHTML += html;
+        else aiContainer.innerHTML = html;
         dtlDiv.style.display = 'block';
+    }
+
+    function loadSavedAiResults(items) {
+        var byProject = {};
+        Ext.each(items || [], function (item) {
+            if (item.project_id && !byProject[item.project_id]) {
+                byProject[item.project_id] = item.project_name || ('Proyek #' + item.project_id);
+            }
+        });
+        var ids = [];
+        for (var id in byProject) {
+            if (Object.prototype.hasOwnProperty.call(byProject, id)) ids.push(id);
+        }
+        if (!ids.length) return;
+
+        var container = document.getElementById('ppAiResultContainer');
+        if (container) container.innerHTML = '<div style="padding:10px;color:#b7dce2;">Memuat hasil analisis AI tersimpan...</div>';
+
+        var completed = 0;
+        var savedResults = [];
+        Ext.each(ids, function (projectId) {
+            ajax({ task: 'latest_project_variance', project_id: projectId }, function (res) {
+                completed++;
+                if (res && res.success && res.data) {
+                    savedResults.push({
+                        projectId: projectId,
+                        projectName: byProject[projectId],
+                        data: res.data
+                    });
+                }
+                if (completed === ids.length) {
+                    var target = document.getElementById('ppAiResultContainer');
+                    if (!target) return;
+                    target.innerHTML = '';
+                    if (!savedResults.length) {
+                        target.innerHTML = '<div style="margin-top:12px;padding:10px;border:1px solid #45616b;color:#b7c6cc;">Belum ada hasil analisis AI tersimpan untuk proyek pada pembayaran ini. Klik "Analisis Varian AI" untuk menjalankan analisis.</div>';
+                        return;
+                    }
+                    Ext.each(savedResults, function (saved, index) {
+                        renderAiResultPanel(saved.data, saved.projectName, index > 0);
+                    });
+                }
+            }, function () {
+                completed++;
+                if (completed === ids.length) {
+                    var target = document.getElementById('ppAiResultContainer');
+                    if (target && !target.innerHTML) {
+                        target.innerHTML = '<div style="margin-top:12px;padding:10px;color:#ffcc80;">Hasil analisis AI tersimpan gagal dimuat. Silakan muat ulang detail.</div>';
+                    }
+                }
+            });
+        });
     }
 
     function enc(v) { return Ext.util.Format.htmlEncode(v == null ? '' : v); }
@@ -298,14 +344,49 @@ Ext.onReady(function () {
 
         document.getElementById('ppBtnPrint').onclick = function () { printReceipt(h.id); };
         document.getElementById('ppBtnAi').onclick = function () {
-            var projectIds = [];
-            Ext.each(items, function (item) { if (item && item.project_id) projectIds.push(item.project_id); });
-            triggerAiAnalysis(projectIds);
+            var firstProjId = (items.length > 0) ? items[0].project_id : null;
+            var aiContainer = document.getElementById('ppAiResultContainer');
+            if (aiContainer) aiContainer.innerHTML = '';
+            triggerAiAnalysis(firstProjId);
         };
+
+        // Saat detail dibuka, tampilkan hasil AI tersimpan untuk semua proyek yang terkait.
+        loadSavedAiResults(items);
     }
 
     function printReceipt(id) {
-        window.open(PRINT_URL + encodeURIComponent(id), '_blank', 'width=900,height=700,scrollbars=yes,resizable=yes');
+        id = parseInt(id, 10);
+        if (!id || id < 1) {
+            Ext.Msg.alert('Pilih Pembayaran', 'Pilih satu pembayaran terlebih dahulu.');
+            return;
+        }
+        // Buka langsung dari interaksi klik supaya tidak mudah diblokir popup blocker.
+        var w = window.open(PRINT_URL + encodeURIComponent(id), '_blank',
+                            'width=1000,height=800,scrollbars=yes,resizable=yes');
+        if (!w) {
+            Ext.Msg.alert('Popup diblokir', 'Izinkan pop-up untuk situs ini, lalu klik Printing kembali.');
+        }
+    }
+
+    // Kaitkan tombol Printing/Cetak di toolbar halaman utama.
+    // Printing toolbar utama: cetak daftar seluruh header pembayaran, bukan tanda terima satu baris.
+    function bindMainPrintButton() {
+        var el = document.getElementById('printData') ||
+                 document.getElementById('printing') ||
+                 document.getElementById('printBtn') ||
+                 document.getElementById('btnPrinting');
+        if (!el || el.getAttribute('data-pp-list-print-bound') === '1') return;
+        el.setAttribute('data-pp-list-print-bound', '1');
+        el.addEventListener('click', function (ev) {
+            if (ev && ev.preventDefault) ev.preventDefault();
+            if (ev && ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+            else if (ev && ev.stopPropagation) ev.stopPropagation();
+            var w = window.open('/rab-project/views/project.payment.list.print.php', '_blank',
+                                'width=1100,height=800,scrollbars=yes,resizable=yes');
+            if (!w) {
+                Ext.Msg.alert('Popup diblokir', 'Izinkan pop-up untuk situs ini, lalu klik Printing kembali.');
+            }
+        }, true);
     }
 
     // ------------------------------------------------------------
@@ -422,6 +503,10 @@ Ext.onReady(function () {
     }
     editDataDisable();
     updateMainButtons();
+    bindMainPrintButton();
+    // Beberapa layout merender toolbar sedikit terlambat.
+    setTimeout(bindMainPrintButton, 250);
+    setTimeout(bindMainPrintButton, 1000);
 
     // ------------------------------------------------------------
     // 3. Editor Pembayaran

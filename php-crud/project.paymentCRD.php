@@ -7,33 +7,36 @@
  * Pola sama dengan poCRD.php: PDO (class crud), dispatch lewat $_REQUEST['task'],
  * respons JSON {success, message, data, totalCount}.
  *
- * Sumber data:
- *   project_invoices       = tagihan termin per proyek (inv_no, termin_name, amount, paid_amount)
- *   project_payments       = header pembayaran dari client (total, teralokasi, lebih bayar)
- *   project_payment_items  = alokasi pembayaran ke tiap termin
- *   projects, clients, chart_of_accounts (akun kas/bank)
+ * Sumber data:[cite: 5]
+ *   project_invoices       = tagihan termin per proyek (inv_no, termin_name, amount, paid_amount)[cite: 5]
+ *   project_payments       = header pembayaran dari client (total, teralokasi, lebih bayar)[cite: 5]
+ *   project_payment_items  = alokasi pembayaran ke tiap termin[cite: 5]
+ *   projects, clients, chart_of_accounts (akun kas/bank)[cite: 5]
  *
- * Aturan:
- *  1. [MULTI-PROYEK] Satu pembayaran = satu CLIENT; alokasi boleh ke termin beberapa proyek milik client yang sama
- *     (validasi: projects.client_id dari setiap termin harus sama dengan client pembayaran).
- *  2. Alokasi per termin tidak boleh melebihi sisa tagihan (amount - paid_amount).
- *  3. total_amount >= allocated_amount; selisihnya disimpan di excess_amount (lebih bayar).
- *  4. Simpan / hapus pembayaran memperbarui project_invoices.paid_amount dalam satu transaksi.
- *  5. Pembayaran tidak bisa diedit; koreksi = hapus (reverse) lalu input ulang.
- *  6. Termin baru: total semua termin proyek tidak boleh melebihi contract_value (bila diisi).
- *  7. [MULTI-CURRENCY] Pembayaran punya mata uang + kurs (default IDR, kurs 1). Input klien (total_amount, amount_paid) = mata uang
- *     pembayaran; tagihan termin tetap IDR. Yang disimpan: total_amount / allocated_amount / excess_amount / amount_paid = IDR
- *     (supaya project_invoices.paid_amount & laporan lama tetap konsisten), nilai asli di total_amount_cur / amount_cur.
- *     Nilai setara IDR = nilai x kurs, di-snap ke sisa tagihan bila selisih hanya akibat pembulatan 2 desimal.
- *  8. delete_termin: hapus termin salah entry, hanya bila belum pernah dibayar (paid_amount = 0 & tidak ada project_payment_items).
+ * Aturan:[cite: 5]
+ *  1. [MULTI-PROYEK] Satu pembayaran = satu CLIENT; alokasi boleh ke termin beberapa proyek milik client yang sama[cite: 5]
+ *     (validasi: projects.client_id dari setiap termin harus sama dengan client pembayaran)[cite: 5].
+ *  2. Alokasi per termin tidak boleh melebihi sisa tagihan (amount - paid_amount)[cite: 5].
+ *  3. total_amount >= allocated_amount; selisihnya disimpan di excess_amount (lebih bayar)[cite: 5].
+ *  4. Simpan / hapus pembayaran memperbarui project_invoices.paid_amount dalam satu transaksi[cite: 5].
+ *  5. Pembayaran tidak bisa diedit; koreksi = hapus (reverse) lalu input ulang[cite: 5].
+ *  6. Termin baru: total semua termin proyek tidak boleh melebihi contract_value (bila diisi)[cite: 5].
+ *  7. [MULTI-CURRENCY] Pembayaran punya mata uang + kurs (default IDR, kurs 1)[cite: 5]. Input klien (total_amount, amount_paid) = mata uang
+ *     pembayaran; tagihan termin tetap IDR[cite: 5]. Yang disimpan: total_amount / allocated_amount / excess_amount / amount_paid = IDR[cite: 5]
+ *     (supaya project_invoices.paid_amount & laporan lama tetap konsisten), nilai asli di total_amount_cur / amount_cur[cite: 5].
+ *     Nilai setara IDR = nilai x kurs, di-snap ke sisa tagihan bila selisih hanya akibat pembulatan 2 desimal[cite: 5].
+ *     Butuh migrasi: sql/2026-10-15.project_payment_currency.sql[cite: 5]
+ *  8. [NEW] delete_termin: hapus termin salah entry, hanya bila belum pernah dibayar (paid_amount = 0 & tidak ada project_payment_items)[cite: 5].
  *  9. [JURNAL] save_payment memposting jurnal otomatis (AutoPostJournal, function.all.php) dalam transaksi yang sama; gagal posting = pembayaran
- *     dibatalkan (rollback). Debit = akun Kas/Bank pilihan user (WAJIB diisi), kredit mengikuti fiscal_config:
- *       PRJ_PAY_AR  : bagian yang dialokasikan ke termin  -> kredit Piutang Usaha
- *       PRJ_PAY_DEP : bagian lebih bayar (excess)          -> kredit Deposit / Uang Muka Client
- *     reference_type = 'project_payment'. delete_payment menghapus jurnalnya (ReverseJournalByReference).
- * 10. [JURNAL-INVOICE] save_termin memposting jurnal penagihan termin (fiscal_config PROJECT_INVOICE:
- *     Dr Piutang Usaha / Cr Pendapatan) dengan reference_type = 'project_invoice', dalam transaksi yang sama
- *     (gagal posting = termin tidak tersimpan). delete_termin menghapus jurnal penagihannya.
+ *     dibatalkan (rollback)[cite: 5]. Debit = akun Kas/Bank pilihan user (WAJIB diisi), kredit mengikuti fiscal_config[cite: 5]:
+ *       PRJ_PAY_AR  : bagian yang dialokasikan ke termin  -> kredit Piutang Usaha[cite: 5]
+ *       PRJ_PAY_DEP : bagian lebih bayar (excess)          -> kredit Deposit / Uang Muka Client[cite: 5]
+ *     reference_type = 'project_payment'[cite: 5]. delete_payment menghapus jurnalnya (ReverseJournalByReference)[cite: 5].
+ *     Butuh migrasi: sql/2026-10-16.project_payment_journal.sql[cite: 5]
+ * 10. [JURNAL-INVOICE][NEW] save_termin memposting jurnal penagihan termin (fiscal_config PROJECT_INVOICE[cite: 5]:
+ *     Dr Piutang Usaha / Cr Pendapatan) dengan reference_type = 'project_invoice', dalam transaksi yang sama[cite: 5]
+ *     (gagal posting = termin tidak tersimpan)[cite: 5]. delete_termin menghapus jurnal penagihannya[cite: 5].
+ *     Task backfill_termin_journal = sekali jalan, memposting jurnal untuk termin lama yang belum punya jurnal[cite: 5].
  * ============================================================
  */
 
@@ -50,10 +53,10 @@ header('Content-Type: application/json');
 
 $db = new crud();
 
-const PP_EPS = 0.01;                                         // toleransi nilai rupiah
-const PP_JOURNAL_REF = 'project_payment';                    // [JURNAL] nilai enum journal_entries.reference_type
-const PP_METHODS = ['BANK_TRANSFER', 'CASH', 'GIRO', 'CEK']; // metode bayar yang diizinkan (varchar(20))
-const PP_INV_JOURNAL_REF = 'project_invoice';                // [JURNAL-INVOICE] nilai enum journal_entries.reference_type untuk penagihan termin
+const PP_EPS = 0.01;                                         // toleransi nilai rupiah[cite: 5]
+const PP_JOURNAL_REF = 'project_payment';                    // [JURNAL] nilai enum journal_entries.reference_type[cite: 5]
+const PP_METHODS = ['BANK_TRANSFER', 'CASH', 'GIRO', 'CEK']; // metode bayar yang diizinkan (varchar(20))[cite: 5]
+const PP_INV_JOURNAL_REF = 'project_invoice';                // [JURNAL-INVOICE][NEW] nilai enum journal_entries.reference_type untuk penagihan termin[cite: 5]
 
 class PpBusinessError extends Exception {}
 
@@ -72,20 +75,20 @@ function sendJsonResponse($success, $data = [], $message = '', $extra = []) {
     exit;
 }
 
-/** Validasi tanggal format YYYY-MM-DD. */
+/** Validasi tanggal format YYYY-MM-DD.[cite: 5] */
 function pp_valid_date(string $s): bool {
     $d = DateTime::createFromFormat('Y-m-d', $s);
     return $d && $d->format('Y-m-d') === $s;
 }
 
-/** Cek apakah termin sudah punya jurnal penagihan. */
+/** [JURNAL-INVOICE][NEW] Cek apakah termin sudah punya jurnal penagihan.[cite: 5] */
 function pp_invoice_has_journal($db, int $invId): bool {
     $st = $db->prepare("SELECT 1 FROM public.journal_entries WHERE reference_type::text = :t AND reference_id = :id LIMIT 1");
     $st->execute([':t' => PP_INV_JOURNAL_REF, ':id' => $invId]);
     return (bool)$st->fetchColumn();
 }
 
-/** Posting jurnal penagihan termin (rule PROJECT_INVOICE). Gagal -> lempar PpBusinessError agar transaksi di-rollback. */
+/** [JURNAL-INVOICE][NEW] Posting jurnal penagihan termin (rule PROJECT_INVOICE). Gagal -> lempar PpBusinessError agar transaksi di-rollback.[cite: 5] */
 function pp_post_invoice_journal($db, int $invId, string $invNo, string $date, float $amount, string $projectName): void {
     $jr = AutoPostJournal($db, [
         'rule_code'      => 'PROJECT_INVOICE',
@@ -154,67 +157,12 @@ try {
         /* ------------------------------------------------------------------
          * [AI-VARIANCE] Analisis Varian Anggaran Proyek menggunakan Google Gemini API
          * ------------------------------------------------------------------ */
-        case 'get_latest_project_variance':
-            $prjId = (int)($_REQUEST['project_id'] ?? 0);
-            
-            // 1. Coba ambil log analisis AI berdasarkan project_id spesifik
-            $st = $db->prepare("
-                SELECT l.id, l.project_id, p.name AS project_name,
-                       l.total_budget, l.total_actual, l.variance_amount,
-                       l.variance_percentage, l.risk_level, l.ai_summary,
-                       l.recommendations, l.created_at
-                  FROM public.ai_variance_logs l
-                  LEFT JOIN public.projects p ON p.id = l.project_id
-                 WHERE l.project_id = :pid
-                 ORDER BY l.created_at DESC, l.id DESC
-                 LIMIT 1
-            ");
-            $st->execute([':pid' => $prjId]);
-            $log = $st->fetch(PDO::FETCH_ASSOC);
-
-            // 2. Fallback: Jika log spesifik belum ada, ambil log AI terbaru apa pun proyeknya
-            if (!$log) {
-                $stFallback = $db->prepare("
-                    SELECT l.id, l.project_id, p.name AS project_name,
-                           l.total_budget, l.total_actual, l.variance_amount,
-                           l.variance_percentage, l.risk_level, l.ai_summary,
-                           l.recommendations, l.created_at
-                      FROM public.ai_variance_logs l
-                      LEFT JOIN public.projects p ON p.id = l.project_id
-                     ORDER BY l.created_at DESC, l.id DESC
-                     LIMIT 1
-                ");
-                $stFallback->execute();
-                $log = $stFallback->fetch(PDO::FETCH_ASSOC);
-            }
-
-            if (!$log) {
-                sendJsonResponse(true, ['found' => false, 'project_id' => $prjId], 'Belum ada hasil analisis tersimpan.');
-            }
-            
-            $log['id'] = (int)$log['id'];
-            $log['project_id'] = $log['project_id'] !== null ? (int)$log['project_id'] : $prjId;
-            $log['project_name'] = $log['project_name'] ?? 'Proyek #' . $log['project_id'];
-            
-            foreach (['total_budget', 'total_actual', 'variance_amount', 'variance_percentage'] as $field) {
-                $log[$field] = $log[$field] !== null ? (float)$log[$field] : 0;
-            }
-            if (is_string($log['recommendations'])) {
-                $decoded = json_decode($log['recommendations'], true);
-                $log['recommendations'] = is_array($decoded) ? $decoded : [];
-            }
-            if (!is_array($log['recommendations'])) {
-                $log['recommendations'] = [];
-            }
-
-            sendJsonResponse(true, ['found' => true, 'data' => $log]);
-            break;
-
         case 'analyze_project_variance':
             $prjId = (int)($_REQUEST['project_id'] ?? 0);
             if ($prjId <= 0) sendJsonResponse(false, [], 'Proyek wajib dipilih.');
 
             try {
+                // 1. Ambil data agregat RAB vs Aktual (Termin / Pengeluaran) dari database existing
                 $st = $db->prepare("
                     SELECT 
                         p.id AS project_id,
@@ -237,6 +185,7 @@ try {
                 $varianceAmount = $totalActual - $totalBudget;
                 $variancePercentage = $totalBudget > 0 ? ($varianceAmount / $totalBudget) * 100 : 0;
 
+                // 2. Susun Prompt untuk Google Gemini API
                 $prompt = "
                     Anda adalah Construction Cost Estimator dan System Analyst ahli untuk sistem ERP RAB Kontraktor. 
                     Analisis data varian anggaran proyek konstruksi berikut:
@@ -251,7 +200,8 @@ try {
                     - \"recommendations\": array of strings (poin-poin tindakan mitigasi konkret untuk kontraktor)
                 ";
                 $apiKey = getenv('GOOGLE_API_KEY');
-                $candidateModels = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+                // Daftar model cadangan (fallback) untuk mengantisipasi trafik tinggi / error 503
+                $candidateModels = ['gemini-3.6-flash','gemini-3.5-flash-lite'];
 
                 $payload = json_encode([
                     'contents' => [
@@ -270,6 +220,7 @@ try {
                 $httpCode = 0;
                 $lastErrorMsg = '';
 
+                // 3. Loop mencoba ke model cadangan & sistem retry otomatis jika menemui kendala 503/429
                 foreach ($candidateModels as $model) {
                     $apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent";
                     
@@ -289,15 +240,15 @@ try {
                         curl_close($ch);
 
                         if ($httpCode === 200) {
-                            break 2;
+                            break 2; // Keluar dari kedua loop jika sukses
                         }
 
                         $lastErrorMsg = "Model {$model} (HTTP {$httpCode}): " . $response;
                         
                         if ($httpCode === 503 || $httpCode === 429) {
-                            sleep(1);
+                            sleep(1); // Jeda 1 detik sebelum retry
                         } else {
-                            break;
+                            break; // Lanjut ke model berikutnya jika error selain 503/429
                         }
                     }
                 }
@@ -308,9 +259,12 @@ try {
 
                 $apiResult = json_decode($response, true);
                 $aiRawText = $apiResult['candidates'][0]['content']['parts'][0]['text'] ?? '{}';
+                
+                // Bersihkan format markdown jika terbawa
                 $aiRawText = trim(str_replace(['```json', '```'], '', $aiRawText));
                 $aiParsed = json_decode($aiRawText, true);
 
+                // 4. Simpan hasil analisis ke tabel log ai_variance_logs
                 $stIns = $db->prepare("
                     INSERT INTO public.ai_variance_logs 
                     (project_id, total_budget, total_actual, variance_amount, variance_percentage, risk_level, ai_summary, recommendations, created_by)
@@ -333,7 +287,6 @@ try {
                 sendJsonResponse(true, [
                     'id'                  => (int)$logRow['id'],
                     'project_id'          => $prjId,
-                    'project_name'        => $prjData['project_name'],
                     'total_budget'        => $totalBudget,
                     'total_actual'        => $totalActual,
                     'variance_amount'     => $varianceAmount,
@@ -350,7 +303,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Combo proyek (+ client & nilai kontrak)
+         * Combo proyek (+ client & nilai kontrak)[cite: 5]
          * ------------------------------------------------------------------ */
         case 'list_project_options':
             $rows = $db->query("
@@ -368,7 +321,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Combo client (hanya client yang punya proyek)
+         * [MULTI-PROYEK] Combo client (hanya client yang punya proyek)[cite: 5]
          * ------------------------------------------------------------------ */
         case 'list_client_options':
             $rows = $db->query("
@@ -381,7 +334,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Combo mata uang (is_base = IDR)
+         * [MULTI-CURRENCY] Combo mata uang (is_base = IDR)[cite: 5]
          * ------------------------------------------------------------------ */
         case 'list_currencies':
             $rows = $db->query("SELECT id, init, name FROM public.m_currency ORDER BY init ASC")->fetchAll(PDO::FETCH_ASSOC);
@@ -394,7 +347,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Kurs default: kurs pajak KMK pada tanggal bayar.
+         * [MULTI-CURRENCY] Kurs default: kurs pajak KMK (tax_exchange_rate_*) pada tanggal bayar.[cite: 5]
          * ------------------------------------------------------------------ */
         case 'get_exchange_rate':
             $cid  = (int)($_REQUEST['currency_id'] ?? 0);
@@ -435,7 +388,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Combo akun kas / bank aktif
+         * Combo akun kas / bank (chart_of_accounts aktif)[cite: 5]
          * ------------------------------------------------------------------ */
         case 'list_account_options':
             $rows = $db->query("
@@ -451,7 +404,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Termin proyek yang masih punya sisa tagihan + ringkasan kontrak
+         * Termin proyek yang masih punya sisa tagihan + ringkasan kontrak[cite: 5]
          * ------------------------------------------------------------------ */
         case 'list_outstanding':
             $cli = (int)($_REQUEST['client_id'] ?? 0);
@@ -506,7 +459,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Tambah termin (tagihan) baru untuk proyek
+         * Tambah termin (tagihan) baru untuk proyek[cite: 5]
          * ------------------------------------------------------------------ */
         case 'save_termin':
             $prj  = (int)($_POST['project_id'] ?? 0);
@@ -562,7 +515,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Daftar pembayaran (grid utama)
+         * Daftar pembayaran (grid utama)[cite: 5]
          * ------------------------------------------------------------------ */
         case 'list_payments':
             $start = (int)($_REQUEST['start'] ?? 0);
@@ -625,7 +578,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Detail pembayaran (header + item)
+         * Detail pembayaran (header + item)[cite: 5]
          * ------------------------------------------------------------------ */
         case 'load_payment':
             $id = (int)($_REQUEST['id'] ?? 0);
@@ -684,7 +637,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Simpan pembayaran baru
+         * Simpan pembayaran baru[cite: 5]
          * ------------------------------------------------------------------ */
         case 'save_payment':
             $cli    = (int)($_POST['client_id'] ?? 0);
@@ -821,7 +774,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Hapus termin
+         * Hapus termin[cite: 5]
          * ------------------------------------------------------------------ */
         case 'delete_termin':
             $id     = (int)($_POST['id'] ?? 0);
@@ -858,7 +811,7 @@ try {
             break;
 
         /* ------------------------------------------------------------------
-         * Hapus pembayaran
+         * Hapus pembayaran[cite: 5]
          * ------------------------------------------------------------------ */
         case 'delete_payment':
             $id = (int)($_POST['id'] ?? 0);
