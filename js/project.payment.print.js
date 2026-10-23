@@ -144,16 +144,21 @@
             if (loading) loading.textContent = 'Tidak ada proyek yang terhubung dengan pembayaran ini.';
             return;
         }
+
         var completed = 0;
         var htmlByProject = {};
         projectIds.forEach(function (projectId) {
-            // Endpoint AI yang sama dengan tombol "Analisis Varian AI" pada halaman detail.
-            request({ task: 'analyze_project_variance', project_id: projectId }, function (err, res) {
+            // Ambil hasil analisis tersimpan yang sama dengan yang ditampilkan di panel.
+            // Jangan memanggil analyze_project_variance saat mencetak karena itu membuat
+            // analisis baru dan hasil cetak bisa berbeda dari hasil yang sedang dilihat.
+            request({ task: 'latest_project_variance', project_id: projectId }, function (err, res) {
                 completed++;
                 var projectName = projectMap[projectId];
                 if (err || !res || !res.success || !res.data) {
-                    htmlByProject[projectId] = '<div class="ai-project"><b>' + esc(projectName) + '</b><p>Hasil analisis AI belum dapat dimuat' +
-                        (res && res.message ? ': ' + esc(res.message) : '.') + '</p></div>';
+                    var msg = (res && res.message) ? res.message :
+                        (err ? err.message : 'Hasil analisis AI belum tersedia.');
+                    htmlByProject[projectId] = '<div class="ai-project"><b>' + esc(projectName) +
+                        '</b><p>' + esc(msg) + '</p></div>';
                 } else {
                     var d = res.data;
                     var risk = String(d.risk_level || 'BELUM DIKETAHUI').toUpperCase();
@@ -164,13 +169,12 @@
                         return '<li>' + esc(rec) + '</li>';
                     }).join('') + '</ul>' : '<ul class="ai-recommendations"><li>Tidak ada rekomendasi khusus.</li></ul>';
 
-                    // Urutan disamakan dengan panel analisis AI pada detail pembayaran:
-                    // judul + tingkat risiko, Ringkasan Eksekutif, lalu Rekomendasi Mitigasi.
                     htmlByProject[projectId] = '<div class="ai-project">' +
                         '<div class="ai-project-heading"><b>AI Cost &amp; Schedule Variance Analysis</b>' +
                         '<span class="ai-risk" style="color:' + color + '">RISK: ' + esc(risk) + '</span></div>' +
                         '<div class="ai-summary"><b>Ringkasan Eksekutif:</b><p>' + esc(d.ai_summary || '-') + '</p></div>' +
                         '<div class="ai-mitigations"><b>Rekomendasi Mitigasi:</b>' + recHtml + '</div>' +
+                        '<div class="muted">Analisis terakhir: ' + esc(dateId(d.created_at)) + '</div>' +
                         '</div>';
                 }
                 if (completed === projectIds.length) {
