@@ -180,7 +180,10 @@ function SpkSave() {
     $projectId = (int)WhPost('project_id');
     $date = WhDate(WhPost('spk_date'), 'Tanggal SPK');
     $foreman = trim(WhPost('foreman')); $desc = trim(WhPost('description')); $remark = trim(WhPost('remark'));
-    $details = WhDetails();
+    // [SPK-TASK] Material optional; parse payload directly because WhDetails() requires at least one row.
+    $detailsRaw = isset($_POST['details']) ? $_POST['details'] : '[]';
+    $details = is_array($detailsRaw) ? $detailsRaw : json_decode((string)$detailsRaw, true);
+    if (!is_array($details)) { throw new WhException('Daftar material SPK tidak valid.'); }
     // [SPK-TASK] Task adalah lingkup kerja wajib; material boleh kosong untuk SPK non-pengeluaran material.
     $taskRaw = WhReq('task_details');
     $taskDetails = is_array($taskRaw) ? $taskRaw : json_decode((string)$taskRaw, true);
