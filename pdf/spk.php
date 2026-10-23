@@ -18,6 +18,13 @@ $st->execute(['id' => $id]);
 $s = $st->fetch(PDO::FETCH_ASSOC);
 if (!$s) { echo 'SPK tidak ditemukan.'; exit; }
 
+// [SPK-TASK] Ambil task yang menjadi ruang lingkup surat perintah kerja.
+$st = $db->prepare("SELECT t.task_name, COALESCE(t.description,'') AS description, t.start_date, t.end_date, COALESCE(t.status,'') AS task_status
+                      FROM spk_tasks st JOIN public.project_tasks t ON t.id=st.task_id
+                     WHERE st.spk_id = :id ORDER BY t.start_date NULLS LAST, t.id");
+$st->execute(['id' => $id]);
+$tasks = $st->fetchAll(PDO::FETCH_ASSOC);
+
 $st = $db->prepare("SELECT si.material_id, m.material_code, m.material_name, COALESCE(NULLIF(si.unit, ''), m.unit, '') AS unit,
                            SUM(si.qty) AS qty, MAX(si.notes) AS notes
                       FROM spk_items si JOIN materials m ON m.id = si.material_id
@@ -42,12 +49,29 @@ pr_open('SPK ' . $s['spk_no'], 'SURAT PERINTAH KERJA (SPK)',
 <table class="rpt fx" style="margin-top:8px;">
     <colgroup><col style="width:150px"><col></colgroup>
     <tr><td><b>Proyek</b></td><td><?php echo pr_e($s['project_name']); ?></td></tr>
+    <tr class="z"><td><b>Status Alur</b></td><td><?php echo pr_e($s['workflow_status'] ?? 'Draft'); ?></td></tr>
     <tr class="z"><td><b>Klien</b></td><td><?php echo pr_e($s['client_name'] ?: '-'); ?></td></tr>
     <tr><td><b>Mandor / Pelaksana</b></td><td><?php echo pr_e($s['foreman'] ?: '-'); ?></td></tr>
     <tr class="z"><td><b>Uraian Pekerjaan</b></td><td><?php echo pr_e($s['description'] ?: '-'); ?></td></tr>
 <?php if (!empty($s['remark'])) { ?>
     <tr><td><b>Catatan</b></td><td><?php echo pr_e($s['remark']); ?></td></tr>
 <?php } ?>
+</table>
+
+
+
+<h3>TASK PROYEK DALAM LINGKUP SPK</h3>
+<table class="rpt fx">
+    <colgroup><col style="width:36px"><col><col><col style="width:90px"><col style="width:90px"><col style="width:90px"></colgroup>
+    <tr><th>No</th><th>Task</th><th>Deskripsi</th><th>Mulai</th><th>Selesai</th><th>Status Task</th></tr>
+<?php
+$ti = 0;
+foreach ($tasks as $t) {
+    echo '<tr' . ($ti % 2 ? ' class="z"' : '') . '><td>' . (++$ti) . '</td><td>' . pr_e($t['task_name']) . '</td><td>' . pr_e($t['description']) .
+         '</td><td>' . pr_e(pr_date($t['start_date'])) . '</td><td>' . pr_e(pr_date($t['end_date'])) . '</td><td>' . pr_e($t['task_status']) . '</td></tr>';
+}
+if (!count($tasks)) echo '<tr><td colspan="6" class="muted">Tidak ada task yang terhubung.</td></tr>';
+?>
 </table>
 
 <h3>MATERIAL YANG DIIZINKAN KELUAR DARI GUDANG</h3>
