@@ -133,6 +133,14 @@ Ext.onReady(function () {
         }
     });
 
+    // Printing seluruh daftar proyek (toolbar kanan atas).
+    var btnPrintProjects = document.getElementById('printData');
+    if (btnPrintProjects) btnPrintProjects.onclick = function (event) {
+        if (event && event.preventDefault) event.preventDefault();
+        var w = window.open('/rab-project/views/m.proyek.print.php?mode=projects', '_blank', 'width=1100,height=800,scrollbars=yes,resizable=yes');
+        if (!w) Ext.Msg.alert('Popup diblokir', 'Izinkan pop-up untuk situs ini, lalu klik Printing kembali.');
+    };
+
     // ------------------------------------------------------------
     // 3. Main Screen Detail Panel (Untuk AI Sub-Task di Layar Utama)
     // ------------------------------------------------------------
@@ -177,6 +185,7 @@ Ext.onReady(function () {
         
         var html = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' +
                    '<h3 style="margin:0; font-size:16px; color:#00bcd4;">Detail & Sub-Task Proyek AI: ' + Ext.util.Format.htmlEncode(dataRecord.name) + '</h3>' +
+                   '<button type="button" id="btnPrintProjectTasks" style="padding:7px 14px; background:#087f8c; color:#fff; border:0; border-radius:4px; cursor:pointer; font-weight:bold;">Print Task</button>' +
                    '<span style="color:#a1c4d0; font-size:12px;">Poin Kontrak: <b>Rp ' + fmtRp(dataRecord.contract_value) + '</b></span>' +
                    '</div>' +
                    '<div style="background:#132330; padding:10px; border-radius:4px; margin-bottom:12px; border:1px solid #1c3648;">' +
@@ -210,6 +219,11 @@ Ext.onReady(function () {
 
         mainDtlDiv.innerHTML = html;
         mainDtlDiv.style.display = 'block';
+        var btnPrintTasks = document.getElementById('btnPrintProjectTasks');
+        if (btnPrintTasks) btnPrintTasks.onclick = function () {
+            var w = window.open('/rab-project/views/m.proyek.print.php?mode=tasks&project_id=' + encodeURIComponent(dataRecord.id), '_blank', 'width=1100,height=800,scrollbars=yes,resizable=yes');
+            if (!w) Ext.Msg.alert('Popup diblokir', 'Izinkan pop-up untuk situs ini, lalu klik Print Task kembali.');
+        };
     }
 
     // ------------------------------------------------------------
