@@ -27,7 +27,7 @@
     <script type="text/javascript">
         window.formAccess = <?php echo json_encode(intval($_SESSION["FormAccess"] ?? 0)); ?>;
     </script>
-    <script type="text/javascript" src="/rab-project/js/project.payment.js"></script>
+    <script type="text/javascript" src="/rab-project/js/project.payment.js?v=20261023-fix3"></script>
     <script type="text/javascript">
         if (document.getElementById('menu')) {
             document.getElementById('menu').innerHTML = <?php echo json_encode($_SESSION["linkMenu"] ?? ''); ?>;
