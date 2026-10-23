@@ -72,10 +72,11 @@ Ext.onReady(function () {
         });
     }
 
-    function renderAiResultPanel(d) {
+    function renderAiResultPanel(d, projectName, append) {
+        var risk = String(d.risk_level || 'BELUM DIKETAHUI').toUpperCase();
         var riskColor = '#2e9e4f'; // LOW
-        if (d.risk_level === 'MEDIUM') riskColor = '#e6a817';
-        else if (d.risk_level === 'HIGH' || d.risk_level === 'CRITICAL') riskColor = '#e05353';
+        if (risk === 'MEDIUM') riskColor = '#e6a817';
+        else if (risk === 'HIGH' || risk === 'CRITICAL') riskColor = '#e05353';
 
         var recHtml = '';
         if (d.recommendations && d.recommendations.length) {
@@ -86,20 +87,20 @@ Ext.onReady(function () {
             recHtml = '<li>Tidak ada rekomendasi khusus.</li>';
         }
 
-        // Tampilan kontras tinggi dengan padding bagian bawah yang memadai
-        var html = '<div style="margin-top:15px; margin-bottom:25px; background:#111b24; border:1px solid #00bcd4; border-radius:6px; padding:18px; color:#ffffff !important;">' +
+        var html = '<div class="pp-ai-project" style="margin-top:15px; margin-bottom:20px; background:#111b24; border:1px solid #00bcd4; border-radius:6px; padding:18px; color:#ffffff !important;">' +
+                   (projectName ? '<div style="font-weight:bold; color:#b7dce2; margin-bottom:8px;">Proyek: ' + enc(projectName) + '</div>' : '') +
                    '<div style="font-weight:bold; font-size:15px; color:#00bcd4; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">' +
-                   '<span>&#9881; AI Cost & Schedule Variance Analysis</span>' +
-                   '<span style="background:' + riskColor + '; color:#fff; padding:3px 10px; border-radius:3px; font-size:13px;">RISK: ' + enc(d.risk_level) + '</span>' +
+                   '<span>&#9881; AI Cost &amp; Schedule Variance Analysis</span>' +
+                   '<span style="background:' + riskColor + '; color:#fff; padding:3px 10px; border-radius:3px; font-size:13px;">RISK: ' + enc(risk) + '</span>' +
                    '</div>' +
                    '<div style="font-size:14px; line-height:22px; margin-bottom:12px; color:#ffffff !important;">' +
-                   '<b style="color:#00bcd4;">Ringkasan Eksekutif:</b> ' + enc(d.ai_summary) +
+                   '<b style="color:#00bcd4;">Ringkasan Eksekutif:</b> ' + enc(d.ai_summary || '-') +
                    '</div>' +
                    '<div style="font-size:14px; line-height:22px; color:#ffffff !important;">' +
                    '<b style="color:#00bcd4;">Rekomendasi Mitigasi:</b>' +
                    '<ul style="margin:6px 0 0 18px; padding:0; color:#ffffff !important;">' + recHtml + '</ul>' +
-                   '</div>' +
-                   '</div>';
+                   (d.created_at ? '<div style="font-size:11px; color:#b7c6cc; margin-top:10px;">Analisis terakhir: ' + enc(d.created_at) + '</div>' : '') +
+                   '</div></div>';
 
         var aiContainer = document.getElementById('ppAiResultContainer');
         if (!aiContainer) {
@@ -107,13 +108,61 @@ Ext.onReady(function () {
             aiContainer.id = 'ppAiResultContainer';
             dtlDiv.appendChild(aiContainer);
         }
-        aiContainer.innerHTML = html;
+        if (append) aiContainer.innerHTML += html;
+        else aiContainer.innerHTML = html;
         dtlDiv.style.display = 'block';
+    }
 
-        // Auto-scroll halus ke bagian bawah area detail
-        setTimeout(function() {
-            dtlDiv.scrollTop = dtlDiv.scrollHeight;
-        }, 100);
+    function loadSavedAiResults(items) {
+        var byProject = {};
+        Ext.each(items || [], function (item) {
+            if (item.project_id && !byProject[item.project_id]) {
+                byProject[item.project_id] = item.project_name || ('Proyek #' + item.project_id);
+            }
+        });
+        var ids = [];
+        for (var id in byProject) {
+            if (Object.prototype.hasOwnProperty.call(byProject, id)) ids.push(id);
+        }
+        if (!ids.length) return;
+
+        var container = document.getElementById('ppAiResultContainer');
+        if (container) container.innerHTML = '<div style="padding:10px;color:#b7dce2;">Memuat hasil analisis AI tersimpan...</div>';
+
+        var completed = 0;
+        var savedResults = [];
+        Ext.each(ids, function (projectId) {
+            ajax({ task: 'latest_project_variance', project_id: projectId }, function (res) {
+                completed++;
+                if (res && res.success && res.data) {
+                    savedResults.push({
+                        projectId: projectId,
+                        projectName: byProject[projectId],
+                        data: res.data
+                    });
+                }
+                if (completed === ids.length) {
+                    var target = document.getElementById('ppAiResultContainer');
+                    if (!target) return;
+                    target.innerHTML = '';
+                    if (!savedResults.length) {
+                        target.innerHTML = '<div style="margin-top:12px;padding:10px;border:1px solid #45616b;color:#b7c6cc;">Belum ada hasil analisis AI tersimpan untuk proyek pada pembayaran ini. Klik "Analisis Varian AI" untuk menjalankan analisis.</div>';
+                        return;
+                    }
+                    Ext.each(savedResults, function (saved, index) {
+                        renderAiResultPanel(saved.data, saved.projectName, index > 0);
+                    });
+                }
+            }, function () {
+                completed++;
+                if (completed === ids.length) {
+                    var target = document.getElementById('ppAiResultContainer');
+                    if (target && !target.innerHTML) {
+                        target.innerHTML = '<div style="margin-top:12px;padding:10px;color:#ffcc80;">Hasil analisis AI tersimpan gagal dimuat. Silakan muat ulang detail.</div>';
+                    }
+                }
+            });
+        });
     }
 
     function enc(v) { return Ext.util.Format.htmlEncode(v == null ? '' : v); }
@@ -296,8 +345,13 @@ Ext.onReady(function () {
         document.getElementById('ppBtnPrint').onclick = function () { printReceipt(h.id); };
         document.getElementById('ppBtnAi').onclick = function () {
             var firstProjId = (items.length > 0) ? items[0].project_id : null;
+            var aiContainer = document.getElementById('ppAiResultContainer');
+            if (aiContainer) aiContainer.innerHTML = '';
             triggerAiAnalysis(firstProjId);
         };
+
+        // Saat detail dibuka, tampilkan hasil AI tersimpan untuk semua proyek yang terkait.
+        loadSavedAiResults(items);
     }
 
     function printReceipt(id) {
