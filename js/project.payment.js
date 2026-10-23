@@ -116,51 +116,63 @@ Ext.onReady(function () {
     function loadSavedAiResults(items) {
         var byProject = {};
         Ext.each(items || [], function (item) {
-            if (item.project_id && !byProject[item.project_id]) {
-                byProject[item.project_id] = item.project_name || ('Proyek #' + item.project_id);
+            var projectId = item && item.project_id ? String(item.project_id) : '';
+            if (projectId && !byProject[projectId]) {
+                byProject[projectId] = item.project_name || ('Proyek #' + projectId);
             }
         });
         var ids = [];
         for (var id in byProject) {
             if (Object.prototype.hasOwnProperty.call(byProject, id)) ids.push(id);
         }
-        if (!ids.length) return;
 
-        var container = document.getElementById('ppAiResultContainer');
-        if (container) container.innerHTML = '<div style="padding:10px;color:#b7dce2;">Memuat hasil analisis AI tersimpan...</div>';
+        var target = document.getElementById('ppAiResultContainer');
+        if (!target) return;
+        if (!ids.length) {
+            target.innerHTML = '<div style="margin-top:12px;padding:10px;border:1px solid #45616b;color:#b7c6cc;">Tidak ada proyek pada detail pembayaran ini untuk memuat hasil analisis AI.</div>';
+            return;
+        }
 
+        target.innerHTML = '<div style="padding:10px;color:#b7dce2;">Memuat hasil analisis AI tersimpan...</div>';
         var completed = 0;
         var savedResults = [];
-        Ext.each(ids, function (projectId) {
+        var failedCount = 0;
+
+        function finishOne() {
+            completed++;
+            if (completed !== ids.length) return;
+            var currentTarget = document.getElementById('ppAiResultContainer');
+            if (!currentTarget) return;
+            currentTarget.innerHTML = '';
+            if (savedResults.length) {
+                // Keep the original project order from the payment detail.
+                savedResults.sort(function (a, b) { return a.order - b.order; });
+                Ext.each(savedResults, function (saved, index) {
+                    renderAiResultPanel(saved.data, saved.projectName, index > 0);
+                });
+            } else if (failedCount) {
+                currentTarget.innerHTML = '<div style="margin-top:12px;padding:10px;color:#ffcc80;">Tidak berhasil memuat hasil analisis tersimpan. Periksa koneksi/server, lalu muat ulang detail.</div>';
+            } else {
+                currentTarget.innerHTML = '<div style="margin-top:12px;padding:10px;border:1px solid #45616b;color:#b7c6cc;">Belum ada hasil analisis AI tersimpan untuk proyek pada pembayaran ini. Klik "Analisis Varian AI" untuk menjalankan analisis.</div>';
+            }
+        }
+
+        Ext.each(ids, function (projectId, index) {
             ajax({ task: 'latest_project_variance', project_id: projectId }, function (res) {
-                completed++;
                 if (res && res.success && res.data) {
                     savedResults.push({
+                        order: index,
                         projectId: projectId,
                         projectName: byProject[projectId],
                         data: res.data
                     });
+                } else if (res && res.message && String(res.message).toLowerCase().indexOf('belum ada hasil') === -1) {
+                    failedCount++;
                 }
-                if (completed === ids.length) {
-                    var target = document.getElementById('ppAiResultContainer');
-                    if (!target) return;
-                    target.innerHTML = '';
-                    if (!savedResults.length) {
-                        target.innerHTML = '<div style="margin-top:12px;padding:10px;border:1px solid #45616b;color:#b7c6cc;">Belum ada hasil analisis AI tersimpan untuk proyek pada pembayaran ini. Klik "Analisis Varian AI" untuk menjalankan analisis.</div>';
-                        return;
-                    }
-                    Ext.each(savedResults, function (saved, index) {
-                        renderAiResultPanel(saved.data, saved.projectName, index > 0);
-                    });
-                }
+                finishOne();
             }, function () {
-                completed++;
-                if (completed === ids.length) {
-                    var target = document.getElementById('ppAiResultContainer');
-                    if (target && !target.innerHTML) {
-                        target.innerHTML = '<div style="margin-top:12px;padding:10px;color:#ffcc80;">Hasil analisis AI tersimpan gagal dimuat. Silakan muat ulang detail.</div>';
-                    }
-                }
+                failedCount++;
+                finishOne();
             });
         });
     }
