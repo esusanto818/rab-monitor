@@ -225,7 +225,7 @@ function SpkSave() {
     WhQ('BEGIN');
     if ($id > 0) {
         $s = SpkGet($id, true);
-        if ($s['status'] !== 'Draft') { throw new WhException('Hanya SPK berstatus Draft yang dapat diubah.'); }
+        if ($s['status'] !== 'Draft' || !in_array(($s['workflow_status'] ?? 'Draft'), array('Draft','Ditolak'), true)) { throw new WhException('SPK hanya dapat diubah saat berstatus Draft atau setelah ditolak.'); }
         // [SPK-WORKFLOW] Draft yang ditolak kembali ke Draft saat diedit agar dapat diajukan ulang.
         WhQ("UPDATE spk SET spk_date=$2, project_id=$3, foreman=$4, description=$5, remark=$6, workflow_status='Draft', approved_at=NULL, approved_by=NULL, updated_at=now() WHERE id=$1",
             array($id, $date, $projectId, $foreman, $desc, $remark));
