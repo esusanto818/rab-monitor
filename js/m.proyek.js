@@ -12,7 +12,7 @@ Ext.onReady(function () {
         document.getElementById("mainHeaderText").innerHTML = "Master Data <em>Proyek & Kontrak</em>";
     }
 
-    var CRD = '../php-crud/m.proyekCRD.php';
+    var CRD = '../dev/php-crud/m.proyekCRD.php';
     var task = '';
     var dataRecord = null;
     var curRate = 1;
