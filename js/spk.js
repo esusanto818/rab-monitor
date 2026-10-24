@@ -6,7 +6,11 @@
                   = qty RAB x (% kontrak dibayar x 2), maks 100% (dihitung server). Warehouse Issuing proyek wajib memilih SPK.
                   Alur status: Draft -> Diterbitkan -> Selesai ; Dibatalkan dari Draft / Diterbitkan yang belum dipakai issue.
                   Pola mengikuti po.js / warehouse.issuing.js (template many-template-icn.php).
+<<<<<<< Updated upstream
   Backend       : /rab-project/dev/php-crud/spkCRD.php  (kuota: php-func/function.spk.php)
+=======
+  Backend       : /rab-project/live/php-crud/spkCRD.php  (kuota: php-func/function.spk.php)
+>>>>>>> Stashed changes
 */
 
 Ext.onReady(function () {

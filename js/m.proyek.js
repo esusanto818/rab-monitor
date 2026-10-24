@@ -3,7 +3,11 @@
   Description   : ExtJS Controller untuk pengelolaan Master Proyek dengan Integrasi AI Task Breakdown
                    - Panel Detail Sub-Task AI di Layar Utama (Main Screen)
                    - Editor Form Responsif & Tinggi Maksimal
+<<<<<<< Updated upstream
   Backend       : /rab-project/dev/php-crud/m.proyekCRD.php
+=======
+  Backend       : /rab-project/live/php-crud/m.proyekCRD.php
+>>>>>>> Stashed changes
 */
 
 Ext.onReady(function () {
@@ -12,7 +16,11 @@ Ext.onReady(function () {
         document.getElementById("mainHeaderText").innerHTML = "Master Data <em>Proyek & Kontrak</em>";
     }
 
+<<<<<<< Updated upstream
     var CRD = '../dev/php-crud/m.proyekCRD.php';
+=======
+    var CRD = '../live/php-crud/m.proyekCRD.php';
+>>>>>>> Stashed changes
     var task = '';
     var dataRecord = null;
     var curRate = 1;
