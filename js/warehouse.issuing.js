@@ -11,7 +11,7 @@
                   dibatalkan lewat Batal Kirim / Batalkan Perintah di modul itu.
                   [NEW 2026-10-11] Alur gudang untuk issue retur: pending -> Siap Kirim (prepared) -> Konfirmasi Dikirim (posted).
                   Stok keluar + jurnal baru dibuat saat Konfirmasi Dikirim (gudang yang menyatakan barang benar-benar keluar).
-  Backend       : /rab-project/dev/php-crud/warehouse.issuingCRD.php
+  Backend       : /proyek/php-crud/warehouse.issuingCRD.php
   PERUBAHAN     : [REBUILD] disusun ulang mengikuti pola template (versi standalone Ext.Window sebelumnya salah)
                   [FIX-DATE] tanggal dikirim lewat ymd() (Date.format('Y-m-d') Ext menghasilkan 'Y-10-10' di browser ini)
                   [CHANGED] gudang = gudang yang masih ada material (bukan lagi per-proyek)
@@ -45,7 +45,8 @@ Ext.onReady(function () {
         document.getElementById("mainHeaderText").innerHTML = "Warehouse <em>Issuing</em>";
     }
 
-    var CRD = '../php-crud/warehouse.issuingCRD.php';     // relatif dari /rab-project/views/
+    var CRD = main_url + '/php-crud/warehouse.issuingCRD.php';
+    //var CRD = '../dev/php-crud/warehouse.issuingCRD.php';     // relatif dari /proyek/views/
     var ACCESS_ADD = 2;      // level akses minimal: buat issue
     var ACCESS_EDIT = 3;     // level akses minimal: reverse issue
     var EPS = 0.00005;       // toleransi qty
@@ -53,6 +54,7 @@ Ext.onReady(function () {
     var dataRecord = null;   // baris issue terpilih di grid utama
     var hdrForm = null, matBar = null;
     var fProject, fWh, fDate, fMandor, fRemark, fMat;
+    var fSpk;                // [SPK][NEW] pilihan SPK (wajib untuk issue ke proyek)
 
     function getFormAccess() {
         return (typeof formAccess !== 'undefined') ? formAccess : (window.formAccess || 0);
@@ -517,7 +519,7 @@ Ext.onReady(function () {
         url: CRD, baseParams: { action: 'list', start: 0, limit: 250 },
         root: 'data', totalProperty: 'totalCount', idProperty: 'id',
         fields: ['id', 'ref_no', 'project_id', 'project_name', 'warehouse_id', 'warehouse_name', 'issue_date',
-                 'received_by_mandor', 'status', 'remark', 'issue_type',
+                 'received_by_mandor', 'status', 'remark', 'issue_type', 'spk_no',     // [SPK] + spk_no
                  'return_ref_no', 'return_status', 'sent_date', 'carrier', 'return_supplier_name',
                  'prepared_at', 'delivery_date', 'delivery_note_no', 'delivery_receiver', 'delivery_proof',
                  { name: 'total_amount', type: 'float' }, { name: 'line_count', type: 'int' }, 'has_overbudget'],
@@ -529,6 +531,11 @@ Ext.onReady(function () {
         url: CRD, baseParams: { action: 'lookup_projects' }, root: 'data', fields: ['id', 'name'],
         listeners: { exception: storeError }
     });
+    // [SPK][NEW] SPK berstatus Diterbitkan milik proyek terpilih
+    var spkDs = new Ext.data.JsonStore({
+        url: CRD, baseParams: { action: 'lookup_spk' }, root: 'data', fields: ['id', 'spk_no', 'foreman', 'label'],
+        listeners: { exception: storeError }
+    });
     var warehouseDs = new Ext.data.JsonStore({
         url: CRD, baseParams: { action: 'lookup_warehouses' }, root: 'data', fields: ['id', 'code', 'name'],
         listeners: { exception: storeError }
@@ -537,7 +544,8 @@ Ext.onReady(function () {
         url: CRD, baseParams: { action: 'lookup_materials' }, root: 'data',
         fields: ['material_id', 'material_code', 'material_name', 'unit',
                  { name: 'onhand', type: 'float' }, { name: 'rab_qty', type: 'float' },
-                 { name: 'issued', type: 'float' }, { name: 'limit_qty', type: 'float' }, { name: 'max_issue', type: 'float' }],
+                 { name: 'issued', type: 'float' }, { name: 'limit_qty', type: 'float' }, { name: 'max_issue', type: 'float' },
+                 { name: 'spk_remaining', type: 'float' }],      // [SPK] sisa jatah SPK
         listeners: { exception: storeError }
     });
     var itemField = ['material_id', 'material_code', 'material_name', 'unit',
@@ -559,6 +567,7 @@ Ext.onReady(function () {
             { header: 'Jenis', dataIndex: 'issue_type', width: 95, align: 'center',
               renderer: function (v) { return v === 'SUPPLIER_RETURN' ? '<span style="color:#2bc1e2;font-weight:bold;">Retur Supplier</span>' : 'Proyek'; } },
             { header: 'Proyek', dataIndex: 'project_name', width: 200, renderer: CellWrap },
+            { header: 'SPK', dataIndex: 'spk_no', width: 115, align: 'center', renderer: function (v) { return enc(v || '-'); } },     // [SPK][NEW]
             { header: 'Gudang', dataIndex: 'warehouse_name', width: 140, renderer: CellWrap },
             { header: 'Mandor Penerima', dataIndex: 'received_by_mandor', width: 130, renderer: function (v) { return enc(v || '-'); } },
             { header: 'Item', dataIndex: 'line_count', width: 50, align: 'center' },
@@ -677,6 +686,17 @@ Ext.onReady(function () {
             triggerAction: 'all', forceSelection: true, allowBlank: false, anchor: '95%', emptyText: 'Pilih proyek dulu',
             listeners: { select: function () { itemDs.removeAll(); fMat.clearValue(); } }
         });
+        // [SPK][NEW] No. SPK wajib: material yang boleh di-issue & batas qty mengikuti SPK (kuota = % pembayaran termin x 2)
+        fSpk = new myComboField({
+            fieldLabel: 'No. SPK', store: spkDs, displayField: 'label', valueField: 'id', mode: 'local',
+            triggerAction: 'all', forceSelection: true, allowBlank: false, anchor: '95%', emptyText: 'Pilih proyek dulu (SPK Diterbitkan)',
+            listeners: {
+                select: function (combo, rec) {
+                    itemDs.removeAll(); fMat.clearValue();
+                    if (rec && !fMandor.getValue()) { fMandor.setValue(rec.get('foreman') || ''); }      // mandor default dari SPK
+                }
+            }
+        });
         fDate = new Ext.form.DateField({ fieldLabel: 'Tanggal', format: 'd/m/Y', value: new Date(), allowBlank: false, width: 120 });
         fMandor = new myTextField({ fieldLabel: 'Mandor Penerima', anchor: '95%' });
         fRemark = new myTextField({ fieldLabel: 'Catatan', anchor: '95%' });
@@ -689,7 +709,7 @@ Ext.onReady(function () {
             border: false,
             layout: 'column',
             bodyStyle: 'background:transparent; padding:4px 2px 0 2px;',
-            items: [col(0.5, [fProject, fWh, fDate]), col(0.5, [fMandor, fRemark])]
+            items: [col(0.5, [fProject, fSpk, fWh]), col(0.5, [fDate, fMandor, fRemark])]
         });
 
         fMat = new myComboField({
@@ -697,12 +717,14 @@ Ext.onReady(function () {
             queryParam: 'query', minChars: 0, triggerAction: 'all', forceSelection: true, anchor: '98%', listWidth: 520,
             emptyText: 'Cari material yang sudah RCV di gudang...',
             tpl: '<tpl for="."><div class="x-combo-list-item">{material_code} - {material_name} ' +
-                 '<b>(stok {onhand}, RAB {rab_qty}, maks issue {max_issue} {unit})</b></div></tpl>',
+                 '<b>(stok {onhand}, RAB {rab_qty}, sisa SPK {spk_remaining}, maks issue {max_issue} {unit})</b></div></tpl>',     // [SPK] + sisa SPK
             listeners: {
                 beforequery: function () {
                     if (!fProject.getValue() || !fWh.getValue()) { showErr('Pilih proyek dan gudang terlebih dahulu.'); return false; }
+                    if (!fSpk.getValue()) { showErr('Pilih SPK terlebih dahulu.'); return false; }                 // [SPK]
                     materialDs.baseParams.project_id = fProject.getValue();
                     materialDs.baseParams.warehouse_id = fWh.getValue();
+                    materialDs.baseParams.spk_id = fSpk.getValue();                                                  // [SPK]
                 }
             }
         });
@@ -722,6 +744,9 @@ Ext.onReady(function () {
     }
 
     function onProjectChange() {
+        fSpk.clearValue();                                                    // [SPK] muat SPK Diterbitkan milik proyek ini
+        spkDs.removeAll();
+        spkDs.load({ params: { project_id: fProject.getValue() } });
         fWh.clearValue();
         itemDs.removeAll();
         fMat.clearValue();
@@ -768,6 +793,7 @@ Ext.onReady(function () {
         warehouseDs.removeAll();
         fMat.clearValue();
         fDate.setValue(new Date()); fMandor.setValue(''); fRemark.setValue('');
+        fSpk.clearValue(); spkDs.removeAll();       // [SPK]
         itemDs.removeAll();
         projectDs.load();
     };
@@ -777,6 +803,7 @@ Ext.onReady(function () {
             showErr('Proyek, gudang, dan tanggal wajib diisi.');
             return;
         }
+        if (!fSpk.getValue()) { showErr('SPK wajib dipilih untuk issue material ke proyek.'); return; }      // [SPK]
         var arr = [], err = '';
         itemDs.each(function (r) {
             var q = parseFloat(r.get('qty_out')) || 0;
@@ -788,7 +815,7 @@ Ext.onReady(function () {
         if (!arr.length) { showErr('Tambahkan minimal satu material.'); return; }
 
         ajax({
-            action: 'save', project_id: fProject.getValue(), warehouse_id: fWh.getValue(),
+            action: 'save', project_id: fProject.getValue(), warehouse_id: fWh.getValue(), spk_id: fSpk.getValue(),     // [SPK] + spk_id
             issue_date: ymd(fDate.getValue()),
             received_by_mandor: fMandor.getValue(), remark: fRemark.getValue(),
             details: Ext.util.JSON.encode(arr)

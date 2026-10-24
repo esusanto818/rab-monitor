@@ -17,7 +17,9 @@ require_once '../php-func/function.all.php';
 require_once '../php-class/crudClass.php';
 require_once '../php-func/function.stock.php';
 require_once '../php-func/journal.stock.php';
+require_once '../php-func/function.spk.php';        // [SPK][NEW] kuota & sisa jatah SPK
 
+define('ISSUE_REQUIRE_SPK', true);           // [SPK][NEW] issue ke proyek WAJIB memilih SPK berstatus Diterbitkan (false = tidak wajib)
 define('ISSUE_ALLOWANCE_PCT', 5.0);          
 define('ISSUE_REF_TYPE', 'MATERIAL_OUT');    
 define('ISSUE_TYPE_RETURN', 'SUPPLIER_RETURN');   
@@ -29,6 +31,7 @@ try {
         case 'list':              IssList(); break;
         case 'detail':            IssDetail(); break;
         case 'lookup_projects':   IssLookupProjects(); break;
+        case 'lookup_spk':        IssLookupSpk(); break;        // [SPK][NEW]
         case 'lookup_warehouses': IssLookupWarehouses(); break;
         case 'lookup_materials':  IssLookupMaterials(); break;
         case 'save':              IssSave(); break;
@@ -36,6 +39,7 @@ try {
         case 'prepare':           IssPrepare(); break;   
         case 'deliver':           IssDeliver(); break;   
         case 'upload_proof':      IssUploadProof(); break;   
+        case 'backfill_return_journal': IssBackfillReturnJournal(); break;   // [BACKFILL-RETUR][NEW] sekali jalan: jurnal retur lama yang belum berjurnal
         default: throw new WhException('Action tidak dikenali.');
     }
 } catch (WhException $e) {
@@ -112,18 +116,19 @@ function IssList() {
     if ($q !== '') {
         $params[] = '%' . $q . '%';
         $where .= ' AND (h.ref_no ILIKE $1 OR p.name ILIKE $1 OR h.received_by_mandor ILIKE $1 OR rt.ref_no ILIKE $1
-                   OR h.delivery_note_no ILIKE $1 OR h.delivery_receiver ILIKE $1)';
+                   OR h.delivery_note_no ILIKE $1 OR h.delivery_receiver ILIKE $1 OR sp.spk_no ILIKE $1)';     // [SPK] cari juga nomor SPK
     }
     $c = WhRow("SELECT COUNT(*) AS n FROM material_out_header h
                 JOIN projects p ON p.id=h.project_id
                 LEFT JOIN supplier_return_hdr rt ON rt.material_out_id=h.id
+                LEFT JOIN spk sp ON sp.id=h.spk_id
                 WHERE $where", $params);
 
     $params[] = $limit;  $pl = '$' . count($params);
     $params[] = $start;  $ps = '$' . count($params);
     $rows = WhRows("SELECT h.id, h.ref_no, h.project_id, p.name AS project_name,
                            h.warehouse_id, w.name AS warehouse_name, h.issue_date,
-                           h.received_by_mandor, h.status, h.remark, h.issue_type,
+                           h.received_by_mandor, h.status, h.remark, h.issue_type, h.spk_id, sp.spk_no,
                            h.prepared_at, h.delivery_date, h.delivery_note_no, h.delivery_receiver, h.delivery_proof,
                            rt.ref_no AS return_ref_no, rt.status AS return_status,
                            rt.sent_date, rt.carrier, rs.name AS return_supplier_name,
@@ -135,6 +140,7 @@ function IssList() {
                     JOIN warehouses w ON w.id=h.warehouse_id
                     LEFT JOIN supplier_return_hdr rt ON rt.material_out_id=h.id
                     LEFT JOIN m_suppliers rs ON rs.id=rt.supplier_id
+                    LEFT JOIN spk sp ON sp.id=h.spk_id
                     LEFT JOIN (SELECT material_out_id, SUM(qty_out*unit_cost) AS total_amount,
                                       COUNT(*) AS line_count, BOOL_OR(is_overbudget) AS has_over
                                FROM material_out_items GROUP BY material_out_id) t ON t.material_out_id=h.id
@@ -182,10 +188,22 @@ function IssLookupWarehouses() {
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
 }
 
+// [SPK][NEW] SPK berstatus Diterbitkan milik proyek (untuk dipilih di editor issue)
+function IssLookupSpk() {
+    $pid = (int)WhReq('project_id');
+    $rows = WhRows("SELECT s.id, s.spk_no, s.spk_date, s.foreman, s.description,
+                           s.spk_no || COALESCE(' - ' || NULLIF(s.foreman,''), '') AS label
+                    FROM spk s WHERE s.project_id=$1 AND s.status='Diterbitkan' ORDER BY s.spk_date DESC, s.id DESC", array($pid));
+    WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
+}
+
 function IssLookupMaterials() {
     $pid = (int)WhReq('project_id');
     $wid = (int)WhReq('warehouse_id');
     $q   = WhReq('query');
+    $spk = (int)WhReq('spk_id');         // [SPK] bila ada: hanya material SPK itu, batas issue = sisa jatah SPK
+    $extra = ''; $params = array($pid, $wid, '%' . $q . '%');
+    if ($spk > 0) { $extra = ' AND m.id IN (SELECT material_id FROM spk_items WHERE spk_id=$4)'; $params[] = $spk; }
     $rows = WhRows("SELECT m.id AS material_id, m.material_code, m.material_name, m.unit,
                            oh.onhand,
                            COALESCE(rab.rab_qty,0) AS rab_qty,
@@ -201,15 +219,19 @@ function IssLookupMaterials() {
                                WHERE h.project_id=$1 AND h.status='posted' AND h.issue_type='PROJECT'
                                GROUP BY i.material_id) iss
                            ON iss.material_id=m.id
-                    WHERE oh.onhand > 0 AND (m.material_name ILIKE $3 OR m.material_code ILIKE $3)
-                    ORDER BY m.material_name LIMIT 50",
-                   array($pid, $wid, '%' . $q . '%'));
+                    WHERE oh.onhand > 0 AND (m.material_name ILIKE $3 OR m.material_code ILIKE $3)" . $extra . "
+                    ORDER BY m.material_name LIMIT 50", $params);
     foreach ($rows as &$r) {
         $rab = (float)$r['rab_qty'];
         $limit = round($rab * (1 + ISSUE_ALLOWANCE_PCT / 100), 4);
         $remain = max(0, round($limit - (float)$r['issued'], 4));
         $r['limit_qty'] = $limit;                                   
         $r['max_issue'] = ($rab > 0) ? min((float)$r['onhand'], $remain) : 0;   
+        if ($spk > 0) {                                              // [SPK] batasi dengan sisa jatah SPK
+            $sr = SpkRemaining($spk, (int)$r['material_id']);
+            $r['spk_remaining'] = $sr['remaining'];
+            $r['max_issue'] = min((float)$r['max_issue'], $sr['remaining']);
+        } else { $r['spk_remaining'] = null; }
     }
     unset($r);
     WhJson(array('success' => true, 'totalCount' => count($rows), 'data' => $rows));
@@ -222,11 +244,13 @@ function IssSave() {
     $date      = WhDate(WhPost('issue_date'), 'Tanggal issue');
     $mandor    = WhPost('received_by_mandor');
     $remark    = WhPost('remark');
+    $spkId     = (int)WhPost('spk_id');       // [SPK][NEW]
     $details   = WhDetails();
     $userId    = WhUserId();
 
     if ($projectId < 1) { throw new WhException('Proyek wajib dipilih.'); }
     if ($whId < 1)      { throw new WhException('Gudang wajib dipilih.'); }
+    if (ISSUE_REQUIRE_SPK && $spkId < 1) { throw new WhException('SPK wajib dipilih untuk issue material ke proyek.'); }
 
     $wh = WhRow('SELECT id, project_id, active FROM warehouses WHERE id=$1', array($whId));
     if (!$wh || !WhBool($wh['active'])) { throw new WhException('Gudang tidak ditemukan / tidak aktif.'); }
@@ -243,7 +267,17 @@ function IssSave() {
     }
 
     WhQ('BEGIN');
-    
+
+    // [SPK][NEW] SPK harus milik proyek ini & berstatus Diterbitkan; baris SPK dikunci agar dua issue tidak melampaui sisa jatah bersamaan
+    $spkNo = '';
+    if ($spkId > 0) {
+        $sp = WhRow('SELECT id, spk_no, project_id, status FROM spk WHERE id=$1 FOR UPDATE', array($spkId));
+        if (!$sp) { throw new WhException('SPK tidak ditemukan.'); }
+        if ((int)$sp['project_id'] !== $projectId) { throw new WhException('SPK ' . $sp['spk_no'] . ' bukan milik proyek yang dipilih.'); }
+        if ($sp['status'] !== 'Diterbitkan') { throw new WhException('SPK ' . $sp['spk_no'] . ' berstatus ' . $sp['status'] . '; hanya SPK Diterbitkan yang dapat dipakai issue.'); }
+        $spkNo = $sp['spk_no'];
+    }
+
     $estimatedTotalValue = 0.0;
     foreach ($lines as $mid => $ln) {
         $qty = $ln['qty'];
@@ -257,9 +291,9 @@ function IssSave() {
 
     $refNo = CreateRefNo('material_out_header', 'ref_no', 'GI');
     $h = WhRow("INSERT INTO material_out_header
-                    (ref_no, project_id, warehouse_id, issue_date, issued_by, received_by_mandor, status, remark)
-                VALUES ($1,$2,$3,$4,$5,$6,'posted',$7) RETURNING id",
-               array($refNo, $projectId, $whId, $date, $userId, $mandor, $remark));
+                    (ref_no, project_id, warehouse_id, issue_date, issued_by, received_by_mandor, status, remark, spk_id)
+                VALUES ($1,$2,$3,$4,$5,$6,'posted',$7,$8) RETURNING id",
+               array($refNo, $projectId, $whId, $date, $userId, $mandor, $remark, $spkId > 0 ? $spkId : null));
     $hdrId = (int)$h['id'];
     $issueValue = 0.0;                              
 
@@ -275,6 +309,15 @@ function IssSave() {
         if ($onhand <= 0) { throw new WhException("Material {$name} belum di-RCV / stok di gudang kosong."); }
         if ($qty > $onhand + 0.00005) {
             throw new WhException("Qty issue {$name} (" . WhFmt($qty) . ") melebihi stok di gudang (" . WhFmt($onhand) . ").");
+        }
+        // [SPK][NEW] material harus ada di SPK dan qty tidak melebihi sisa jatah SPK
+        if ($spkId > 0) {
+            $sr = SpkRemaining($spkId, $mid);
+            if ($sr['qty'] <= 0) { throw new WhException("Material {$name} tidak ada di SPK {$spkNo}."); }
+            if ($qty > $sr['remaining'] + 0.00005) {
+                throw new WhException("Qty issue {$name} (" . WhFmt($qty) . ") melebihi sisa jatah SPK {$spkNo} (" . WhFmt($sr['remaining']) .
+                    " dari " . WhFmt($sr['qty']) . ", sudah terpakai " . WhFmt($sr['used']) . ").");
+            }
         }
         
         $info = IssRabInfo($projectId, $mid);
@@ -441,12 +484,40 @@ function IssUploadProof() {
     }
     $ht = $dir . '/.htaccess';                               
     if (!file_exists($ht)) {
-        @file_put_contents($ht, "<FilesMatch \"\\.(php|phtml|phar|pl|cgi)$\>\n    Require all denied\n</FilesMatch>\n");
+        @file_put_contents($ht, "<FilesMatch \"\\.(php|phtml|phar|pl|cgi)$\">\n    Require all denied\n</FilesMatch>\n");   // [FIX-HTACCESS] tanda kutip penutup pola FilesMatch sebelumnya hilang ($\>)
     }
     $name = 'dlv_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
     if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) {
         throw new WhException('Gagal menyimpan file. Cek izin tulis folder uploads/delivery.');
     }
-    WhJson(array('success' => true, 'url' => '/rab-project/uploads/delivery/' . $name, 'name' => $name));
+    WhJson(array('success' => true, 'url' => '/proyek/uploads/delivery/' . $name, 'name' => $name));
+}
+
+// [BACKFILL-RETUR][NEW] Backfill sekali jalan: jurnal retur supplier (Dr GRN Clearing / Cr Persediaan, rule RETURN_SUPPLIER)
+// untuk retur yang sudah dikirim (issue posted) tetapi belum punya jurnal -- yaitu retur yang dikirim sebelum fitur jurnal ada.
+// Idempotent (retur yang sudah berjurnal dilewati). Satu transaksi: gagal satu (mis. periode ditutup) = batal semua.
+// Tanggal jurnal = tanggal kirim (delivery_date, bila kosong issue_date).
+function IssBackfillReturnJournal() {
+    $userId = WhUserId();       // tanpa WhRequirePost: dibuka lewat URL (GET); aman karena idempotent + wajib FormAccess >= 3
+    if (intval(isset($_SESSION['FormAccess']) ? $_SESSION['FormAccess'] : 0) < 3) { throw new WhException('Akses ditolak.'); }
+    WhQ('BEGIN');
+    $rows = WhRows("SELECT r.id, r.ref_no, COALESCE(mo.delivery_date, mo.issue_date, r.sent_date) AS jdate,
+                           COALESCE((SELECT SUM(i.qty_out*i.unit_cost) FROM material_out_items i WHERE i.material_out_id=mo.id),0) AS total
+                    FROM supplier_return_hdr r
+                    JOIN material_out_header mo ON mo.id=r.material_out_id AND mo.status='posted'
+                    WHERE r.status IN ('Dikirim','Diganti','Kredit')
+                      AND NOT EXISTS (SELECT 1 FROM journal_entries je
+                                       WHERE je.reference_type::text=$1 AND je.reference_id=r.id)
+                    ORDER BY jdate ASC, r.id ASC", array(JRN_REF_RETURN));
+    $done = array(); $skipped = array();
+    foreach ($rows as $r) {
+        $jid = JrnPost('RETURN_SUPPLIER', JRN_REF_RETURN, (int)$r['id'], $r['jdate'], $r['total'],
+                       'Retur supplier ' . $r['ref_no'], $userId);
+        if ($jid) { $done[] = $r['ref_no']; } else { $skipped[] = $r['ref_no']; }     // nilai 0 -> tidak dijurnal
+    }
+    WhQ('COMMIT');
+    $msg = count($done) . ' jurnal retur diposting' . (count($done) ? ': ' . implode(', ', $done) : '.');
+    if (count($skipped)) { $msg .= ' | dilewati (nilai 0): ' . implode(', ', $skipped); }
+    WhOk($msg, array('posted' => $done, 'skipped' => $skipped));
 }
 ?>

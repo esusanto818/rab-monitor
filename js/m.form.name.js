@@ -122,10 +122,10 @@ Ext.onReady(function() {
 	};
 
 	var myMask = new Ext.LoadMask(Ext.getBody(), {msg:"Please wait..."});
-	var deleteDs = new Ext.data.Store({url: '../php-crud/m.form.nameCRD.php'});
+	var deleteDs = new Ext.data.Store({url: '../dev/php-crud/m.form.nameCRD.php'});
 
 	var GroupDs = new Ext.data.Store({
-		url: '../php-crud/m.form.groupCRD.php',
+		url: '../dev/php-crud/m.form.groupCRD.php',
 		baseParams:{task: 'read'},
 		reader: new Ext.data.JsonReader({
       root: 'data',totalProperty: 'totalRecord',
@@ -134,7 +134,7 @@ Ext.onReady(function() {
 	});
 	GroupDs.load();
   var departmentDs = new Ext.data.Store({
-    url: '../php-crud/m.department.php',
+    url: '../dev/php-crud/m.department.php',
     baseParams:{task: 'read', formId:'3' },
     reader: new Ext.data.JsonReader({
       root: 'data', totalProperty: 'totalCount',
@@ -159,7 +159,7 @@ Ext.onReady(function() {
     { name: 'active', type: 'boolean' }
 	];
 	mainDs = new Ext.data.Store({
-		url: '../php-crud/m.form.nameCRD.php',
+		url: '../dev/php-crud/m.form.nameCRD.php',
 		idProperty: 'id',
 		baseParams:{task: 'read'},
 		reader: new Ext.data.JsonReader({root: 'data', totalProperty: 'totalRecord', fields :FormField})
@@ -168,7 +168,7 @@ Ext.onReady(function() {
 
   //Editor Form
   var gridEditorDs = new Ext.data.Store({
-    url: '../php-crud/m.form.nameCRD.php',
+    url: '../dev/php-crud/m.form.nameCRD.php',
     baseParams:{task: 'read_detail'},
     reader: new Ext.data.JsonReader({root: 'data', fields : FormField})
   });
@@ -189,7 +189,7 @@ Ext.onReady(function() {
   });
   gridEditor.addClass('x-grid3-gridEditor');
   var frmEditor = new stdForm({
-    url: '../php-crud/m.form.nameCRD.php',
+    url: '../dev/php-crud/m.form.nameCRD.php',
     id: 'frmEditor',
     reader: new Ext.data.JsonReader({root : 'data',fields: FormField}),
     renderTo: 'editorFormMain',

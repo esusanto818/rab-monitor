@@ -12,8 +12,7 @@
 Ext.onReady(function () {
     Ext.QuickTips.init();
     document.getElementById("mainHeaderText").innerHTML = "<em>SPK</em> - Surat Perintah Kerja";
-
-    var CRD = '../php-crud/spkCRD.php';
+    var CRD = main_url + '/php-crud/spkCRD.php';
     var ACCESS_EDIT = 2;      // buat / ubah Draft
     var ACCESS_ACTION = 3;    // terbitkan / tutup / batalkan / hapus
     var EPS = 0.00005;
@@ -292,7 +291,19 @@ Ext.onReady(function () {
             renderTo: 'spkMatBar', border: false, layout: 'column', bodyStyle: 'background:transparent; padding:2px;',
             items: [
                 { columnWidth: 0.45, layout: 'form', border: false, hideLabels: true, bodyStyle: 'background:transparent;', items: [fMat] },
-                { width: 150, border: false, bodyStyle: 'background:transparent; padding-left:6px;', items: [new Ext.Button({ text: '+ Tambah Material', handler: addMaterial })] },
+                { width: 150, border: false, bodyStyle: 'background:transparent; padding-left:6px;', 
+                    items: [new Ext.Button({ 
+                        text: '<span style="color:#00bcd4 !important; font-weight:bold;">+ Tambah Material</span>',
+                        handler: addMaterial,
+                        style: {
+                            color: '##00bcd4',
+                            backgroundColor: '#ffffff00',
+                            border: '1.5px solid #00bcd4',
+                            padding: '8px 20px',
+                            borderRadius: '20px',
+                            fontWeight: 'bold'
+                        }
+                })] },
                 { columnWidth: 0.55, border: false, bodyStyle: 'background:transparent; padding:6px 0 0 8px; color:#9fc3d1; font-size:11px;',
                   html: 'Kuota = qty RAB x (% kontrak dibayar x 2). Material tanpa kuota tersedia tidak dapat ditambahkan.' }
             ]

@@ -16,6 +16,7 @@ let cssGridEditColumn = 'background-color:rgba(166, 157, 82, .1); color: #228bcd
 let gridRibbonCell = 'padding: 8px 10px !important;';
 let cssGridYellow = 'color: #fdaf3d;';
 let cssGridRed = 'color: #db3955;';
+let main_url = '../' + (window.location.pathname.includes('/live/') ? 'live' : 'dev');
 
 let historyField = [
   {name: 'id', type : 'int'},

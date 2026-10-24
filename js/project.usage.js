@@ -19,8 +19,8 @@ Ext.onReady(function () {
         var el = document.getElementById(id);
         if (el) el.style.display = 'none';
     });
+    var CRD = main_url + '/php-crud/project.usageCRD.php';
 
-    var CRD = '../dev/php-crud/project.usageCRD.php';
 
     function enc(v) { return Ext.util.Format.htmlEncode(v == null ? '' : v); }
     function fmtAmt(v) { return Ext.util.Format.number(v || 0, '0,000.00'); }
